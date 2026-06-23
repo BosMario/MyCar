@@ -1148,6 +1148,94 @@ function downloadFile(content, filename, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+/* ===== GitHub Gist sync (token เก็บแยกจาก data — กันหลุดขึ้น gist) ===== */
+const SYNC_KEY = 'xmax_sync_v1';
+const GIST_FILE = 'xmax_data.json';
+function loadSync() {
+  try {
+    return {
+      token: '',
+      gistId: '',
+      lastSync: '',
+      ...(JSON.parse(localStorage.getItem(SYNC_KEY)) || {})
+    };
+  } catch (e) {
+    return {
+      token: '',
+      gistId: '',
+      lastSync: ''
+    };
+  }
+}
+function saveSync(s) {
+  try {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(s));
+  } catch (e) {}
+}
+const ghHeaders = t => ({
+  Authorization: 'Bearer ' + t,
+  Accept: 'application/vnd.github+json',
+  'Content-Type': 'application/json'
+});
+async function gistCreate(token, data) {
+  const r = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: ghHeaders(token),
+    body: JSON.stringify({
+      description: 'XMAX Logbook data (do not share)',
+      public: false,
+      files: {
+        [GIST_FILE]: {
+          content: JSON.stringify(data, null, 2)
+        }
+      }
+    })
+  });
+  if (!r.ok) throw new Error('สร้าง Gist ไม่สำเร็จ (' + r.status + ') — ตรวจสิทธิ์ token (ต้องมี scope gist)');
+  return (await r.json()).id;
+}
+async function gistPush(token, gistId, data) {
+  const r = await fetch('https://api.github.com/gists/' + gistId, {
+    method: 'PATCH',
+    headers: ghHeaders(token),
+    body: JSON.stringify({
+      files: {
+        [GIST_FILE]: {
+          content: JSON.stringify(data, null, 2)
+        }
+      }
+    })
+  });
+  if (!r.ok) throw new Error('ดันขึ้น Gist ไม่สำเร็จ (' + r.status + ')');
+}
+async function gistPull(token, gistId) {
+  const r = await fetch('https://api.github.com/gists/' + gistId, {
+    headers: ghHeaders(token)
+  });
+  if (!r.ok) throw new Error('ดึง Gist ไม่สำเร็จ (' + r.status + ')');
+  const j = await r.json();
+  const f = j.files && j.files[GIST_FILE];
+  if (!f) throw new Error('ไม่พบไฟล์ ' + GIST_FILE + ' ใน Gist นี้');
+  let content = f.content;
+  if (f.truncated && f.raw_url) content = await (await fetch(f.raw_url)).text();
+  return JSON.parse(content);
+}
+function mergeImport(parsed) {
+  if (!parsed || !parsed.vehicle && !parsed.fuelLogs) throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
+  return {
+    ...structuredClone(DEFAULT_DATA),
+    ...parsed,
+    vehicle: {
+      ...DEFAULT_DATA.vehicle,
+      ...(parsed.vehicle || {})
+    },
+    settings: {
+      ...DEFAULT_DATA.settings,
+      ...(parsed.settings || {})
+    }
+  };
+}
+
 /* ============================== UI PRIMITIVES ============================== */
 function Card(_ref) {
   let {
@@ -3169,9 +3257,11 @@ function InfoScreen(_ref21) {
   }, "\uD83D\uDCA1 \u0E41\u0E19\u0E30\u0E19\u0E33 Export \u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E33 (Safari \u0E2D\u0E32\u0E08\u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E0A\u0E49\u0E19\u0E32\u0E19)"), /*#__PURE__*/React.createElement("button", {
     onClick: clearAll,
     className: "press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1"
-  }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E02\u0E36\u0E49\u0E19 GitHub (Gist)"), /*#__PURE__*/React.createElement(SyncCard, {
+    ctx: ctx
+  }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.3 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v1.4 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
@@ -3251,12 +3341,180 @@ function TireSheet(_ref23) {
     onClick: save
   }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")));
 }
-function RefRow(_ref24) {
+function SyncCard(_ref24) {
+  let {
+    ctx
+  } = _ref24;
+  const {
+    data,
+    setData,
+    showToast
+  } = ctx;
+  const [sync, setSync] = useState(loadSync);
+  const [tokenInput, setTokenInput] = useState('');
+  const [gistInput, setGistInput] = useState('');
+  const [busy, setBusy] = useState('');
+  const connected = !!(sync.token && sync.gistId);
+  const persist = s => {
+    saveSync(s);
+    setSync(s);
+  };
+  const connectNew = async () => {
+    const tk = tokenInput.trim();
+    if (!tk) {
+      alert('กรุณาใส่ token ก่อน');
+      return;
+    }
+    setBusy('connect');
+    try {
+      const id = await gistCreate(tk, data);
+      persist({
+        token: tk,
+        gistId: id,
+        lastSync: new Date().toISOString()
+      });
+      setTokenInput('');
+      showToast('สร้าง Gist & ดันข้อมูลขึ้นแล้ว');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const connectExisting = async () => {
+    const tk = tokenInput.trim(),
+      id = gistInput.trim();
+    if (!tk || !id) {
+      alert('ใส่ token และ Gist ID');
+      return;
+    }
+    setBusy('connect');
+    try {
+      await gistPull(tk, id);
+      persist({
+        token: tk,
+        gistId: id,
+        lastSync: ''
+      });
+      setTokenInput('');
+      setGistInput('');
+      showToast('เชื่อมต่อสำเร็จ — กด Pull เพื่อดึงข้อมูล');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const push = async () => {
+    setBusy('push');
+    try {
+      await gistPush(sync.token, sync.gistId, data);
+      persist({
+        ...sync,
+        lastSync: new Date().toISOString()
+      });
+      showToast('ดันข้อมูลขึ้น GitHub แล้ว');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const pull = async () => {
+    if (!confirm('ดึงข้อมูลจาก GitHub มาทับข้อมูลในเครื่องนี้?')) return;
+    setBusy('pull');
+    try {
+      const remote = mergeImport(await gistPull(sync.token, sync.gistId));
+      setData(remote);
+      persist({
+        ...sync,
+        lastSync: new Date().toISOString()
+      });
+      showToast('ดึงข้อมูลล่าสุดแล้ว');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy('');
+    }
+  };
+  const disconnect = () => {
+    if (confirm('ตัดการเชื่อมต่อ? (ข้อมูลใน Gist ไม่ถูกลบ — แค่ลืม token/gist ในเครื่องนี้)')) persist({
+      token: '',
+      gistId: '',
+      lastSync: ''
+    });
+  };
+  if (!connected) return /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 space-y-3 mb-5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400 leading-relaxed"
+  }, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E02\u0E36\u0E49\u0E19 GitHub Gist (\u0E25\u0E31\u0E1A) \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E40\u0E2D\u0E07 \u2014 \u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07 Export \u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2D\u0E07 \xB7 \u0E40\u0E1B\u0E34\u0E14\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E2D\u0E37\u0E48\u0E19\u0E01\u0E47 Pull \u0E21\u0E32\u0E43\u0E0A\u0E49\u0E15\u0E48\u0E2D\u0E44\u0E14\u0E49"), /*#__PURE__*/React.createElement(Field, {
+    label: "GitHub Token (\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19)",
+    hint: "github.com/settings/tokens \u2192 Tokens (classic) \u2192 \u0E15\u0E34\u0E4A\u0E01\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C gist \u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E14\u0E35\u0E22\u0E27 \u2192 \u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "off",
+    value: tokenInput,
+    onChange: e => setTokenInput(e.target.value),
+    placeholder: "ghp_...",
+    className: inputCls + ' text-left'
+  })), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: connectNew,
+    disabled: !!busy
+  }, busy === 'connect' ? 'กำลังทำงาน...' : '✨ สร้าง Gist ใหม่ & ดันข้อมูลขึ้น'), /*#__PURE__*/React.createElement("div", {
+    className: "text-center text-[12px] text-slate-600"
+  }, "\u2014 \u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E01\u0E31\u0E1A Gist \u0E17\u0E35\u0E48\u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48 \u2014"), /*#__PURE__*/React.createElement(Field, {
+    label: "Gist ID (\u0E16\u0E49\u0E32\u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E41\u0E25\u0E49\u0E27)"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    autoComplete: "off",
+    value: gistInput,
+    onChange: e => setGistInput(e.target.value),
+    placeholder: "a1b2c3d4...",
+    className: inputCls + ' text-left'
+  })), /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: connectExisting,
+    className: "w-full text-center"
+  }, "\uD83D\uDD17 \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E01\u0E31\u0E1A Gist \u0E40\u0E14\u0E34\u0E21"));
+  return /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 space-y-2.5 mb-5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-lg"
+  }, "\u2601\uFE0F"), /*#__PURE__*/React.createElement("span", {
+    className: "font-bold"
+  }, "\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D\u0E41\u0E25\u0E49\u0E27")), /*#__PURE__*/React.createElement("a", {
+    href: 'https://gist.github.com/' + sync.gistId,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    className: "text-[12px] text-brand font-semibold"
+  }, "\u0E40\u0E1B\u0E34\u0E14 Gist \u2197")), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 num"
+  }, "Gist: ", sync.gistId.slice(0, 10), "\u2026 \xB7 ", sync.lastSync ? 'ซิงค์ล่าสุด ' + thDate(sync.lastSync.slice(0, 10)) : 'ยังไม่เคยซิงค์'), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3 pt-1"
+  }, /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: push,
+    disabled: !!busy,
+    className: "!py-3.5"
+  }, busy === 'push' ? '...' : '⬆️ Push ขึ้น'), /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: pull,
+    className: "text-center"
+  }, busy === 'pull' ? '...' : '⬇️ Pull ลง')), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 px-1"
+  }, "\u2B06\uFE0F Push = \u0E14\u0E31\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E02\u0E36\u0E49\u0E19 GitHub \xB7 \u2B07\uFE0F Pull = \u0E14\u0E36\u0E07\u0E08\u0E32\u0E01 GitHub \u0E21\u0E32\u0E17\u0E31\u0E1A\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49"), /*#__PURE__*/React.createElement("button", {
+    onClick: disconnect,
+    className: "press w-full py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-400 text-[13px] font-semibold"
+  }, "\u0E15\u0E31\u0E14\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D"));
+}
+function RefRow(_ref25) {
   let {
     k,
     v,
     last
-  } = _ref24;
+  } = _ref25;
   return /*#__PURE__*/React.createElement("div", {
     className: 'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')
   }, /*#__PURE__*/React.createElement("span", {
@@ -3265,19 +3523,19 @@ function RefRow(_ref24) {
     className: "text-[13px] text-slate-200 text-right font-medium"
   }, v));
 }
-function SectionLabel(_ref25) {
+function SectionLabel(_ref26) {
   let {
     children
-  } = _ref25;
+  } = _ref26;
   return /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"
   }, children);
 }
-function Header(_ref26) {
+function Header(_ref27) {
   let {
     title,
     subtitle
-  } = _ref26;
+  } = _ref27;
   return /*#__PURE__*/React.createElement("div", {
     className: "pt-3 pb-4 sticky top-0 z-20"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3286,12 +3544,12 @@ function Header(_ref26) {
     className: "text-3xl font-extrabold tracking-tight"
   }, title));
 }
-function EmptyState(_ref27) {
+function EmptyState(_ref28) {
   let {
     icon,
     title,
     sub
-  } = _ref27;
+  } = _ref28;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-8 text-center"
   }, /*#__PURE__*/React.createElement("div", {
