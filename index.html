@@ -841,7 +841,8 @@ const DEFAULT_DATA = {
     lastBackup: '',
     backupIntervalDays: 14,
     monthlyBudget: 0,
-    theme: 'dark'
+    theme: 'dark',
+    autoSync: false
   }
 };
 const TANK_L = 13; // ความจุถัง (ล.) จากคู่มือ
@@ -1395,6 +1396,13 @@ function App() {
   const [data, setData] = useState(loadData);
   const [tab, setTab] = useState('home');
   const [toast, setToast] = useState(null);
+  const [sync, setSync] = useState(loadSync);
+  const [remoteNewer, setRemoteNewer] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const pushTimer = useRef(null);
+  const skipPush = useRef(true);
   useEffect(() => {
     saveData(data);
   }, [data]);
@@ -1409,9 +1417,12 @@ function App() {
     fn(n);
     return n;
   }), []);
-  const showToast = useCallback(msg => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
+  const showToast = useCallback((msg, action) => {
+    setToast({
+      msg,
+      action
+    });
+    setTimeout(() => setToast(null), action ? 5000 : 2200);
   }, []);
   const exportData = useCallback(() => {
     setData(d => {
@@ -1426,12 +1437,93 @@ function App() {
     });
     showToast('สำรองข้อมูลแล้ว');
   }, []);
+  const setSyncCfg = useCallback(s => {
+    saveSync(s);
+    setSync(s);
+  }, []);
+  const connected = !!(sync.token && sync.gistId);
+  const pushNow = useCallback(async silent => {
+    if (!sync.token || !sync.gistId) return;
+    try {
+      await gistPush(sync.token, sync.gistId, dataRef.current);
+      setSyncCfg({
+        ...sync,
+        lastSync: new Date().toISOString()
+      });
+      if (!silent) showToast('ดันขึ้น GitHub แล้ว');
+    } catch (e) {
+      if (!silent) showToast('ซิงค์ไม่สำเร็จ: ' + e.message);
+    }
+  }, [sync]);
+  const pullNow = useCallback(async () => {
+    if (!sync.token || !sync.gistId) return;
+    try {
+      const remote = mergeImport(await gistPull(sync.token, sync.gistId));
+      skipPush.current = true;
+      setData(remote);
+      setSyncCfg({
+        ...sync,
+        lastSync: new Date().toISOString()
+      });
+      setRemoteNewer(false);
+      showToast('ดึงข้อมูลล่าสุดแล้ว');
+    } catch (e) {
+      showToast('ดึงไม่สำเร็จ: ' + e.message);
+    }
+  }, [sync]);
+
+  // auto-push (debounced) เมื่อเปิด auto-sync
+  useEffect(() => {
+    if (skipPush.current) {
+      skipPush.current = false;
+      return;
+    }
+    if (!data.settings.autoSync || !connected) return;
+    clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => pushNow(true), 3500);
+    return () => clearTimeout(pushTimer.current);
+  }, [data]);
+
+  // เช็คตอนเปิดแอป ว่าคลาวด์ใหม่กว่าไหม
+  useEffect(() => {
+    (async () => {
+      if (!sync.token || !sync.gistId || !sync.lastSync) return;
+      try {
+        const r = await fetch('https://api.github.com/gists/' + sync.gistId, {
+          headers: ghHeaders(sync.token)
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j.updated_at && new Date(j.updated_at).getTime() > new Date(sync.lastSync).getTime() + 5000) setRemoteNewer(true);
+      } catch (e) {}
+    })();
+  }, []);
+
+  // Quick Action จาก URL (?action=fuel|maint|odo)
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(location.search).get('action');
+      if (p === 'fuel' || p === 'maint' || p === 'odo') {
+        setTab('home');
+        setPendingAction(p);
+      }
+    } catch (e) {}
+  }, []);
   const ctx = {
     data,
     update,
     setData,
     showToast,
-    exportData
+    exportData,
+    sync,
+    setSyncCfg,
+    connected,
+    pushNow,
+    pullNow,
+    remoteNewer,
+    setRemoteNewer,
+    pendingAction,
+    setPendingAction
   };
   const tabs = [{
     id: 'home',
@@ -1491,13 +1583,21 @@ function App() {
       className: 'text-[10px] mt-1 font-semibold ' + (active ? 'text-brand' : 'text-slate-500')
     }, t.label));
   }))))), toast && /*#__PURE__*/React.createElement("div", {
-    className: "fixed left-1/2 -translate-x-1/2 z-[60] anim-pop",
+    className: "fixed left-1/2 -translate-x-1/2 z-[60] anim-pop w-[92%] max-w-sm flex justify-center",
     style: {
       bottom: 'calc(env(safe-area-inset-bottom) + 6.5rem)'
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "glass-strong border border-emerald-400/30 text-emerald-200 px-5 py-3 rounded-2xl text-sm font-semibold shadow-xl flex items-center gap-2"
-  }, /*#__PURE__*/React.createElement("span", null, "\u2713"), toast))));
+    className: "glass-strong border border-emerald-400/30 text-emerald-200 px-5 py-3 rounded-2xl text-sm font-semibold shadow-xl flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", null, "\u2713"), toast.msg), toast.action && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      toast.action.fn();
+      setToast(null);
+    },
+    className: "press px-3 py-1 rounded-lg bg-emerald-400/20 border border-emerald-400/40 text-emerald-100 text-xs font-bold"
+  }, toast.action.label)))));
 }
 
 /* ============================== HOME ============================== */
@@ -1510,12 +1610,21 @@ function HomeScreen(_ref7) {
     data,
     update,
     showToast,
-    exportData
+    exportData,
+    remoteNewer,
+    pullNow,
+    pendingAction,
+    setPendingAction
   } = ctx;
   const [odoOpen, setOdoOpen] = useState(false);
   const [fuelOpen, setFuelOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);
   const [quickItem, setQuickItem] = useState(null);
+  useEffect(() => {
+    if (!pendingAction) return;
+    if (pendingAction === 'fuel') setFuelOpen(true);else if (pendingAction === 'maint') setMaintOpen(true);else if (pendingAction === 'odo') setOdoOpen(true);
+    setPendingAction(null);
+  }, [pendingAction]);
   const fuelStats = useMemo(() => computeFuelStats(data.fuelLogs), [data.fuelLogs]);
   const avg = avgKmpl(fuelStats);
   const lastFuel = [...data.fuelLogs].sort((a, b) => a.date < b.date ? 1 : -1)[0];
@@ -1561,7 +1670,22 @@ function HomeScreen(_ref7) {
     className: "text-2xl font-extrabold tracking-tight"
   }, "XMAX Logbook")), /*#__PURE__*/React.createElement("div", {
     className: "w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl"
-  }, "\uD83D\uDEF5")), backupDue && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDEF5")), remoteNewer && /*#__PURE__*/React.createElement("div", {
+    className: "mb-3 anim-pop"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-brand/10 border border-brand/30 p-3.5 flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-xl"
+  }, "\u2601\uFE0F"), /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 min-w-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[14px] font-bold text-brand"
+  }, "\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E2B\u0E21\u0E48\u0E01\u0E27\u0E48\u0E32\u0E1A\u0E19\u0E04\u0E25\u0E32\u0E27\u0E14\u0E4C"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400"
+  }, "\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E08\u0E32\u0E01\u0E2D\u0E35\u0E01\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07 \u2014 \u0E14\u0E36\u0E07\u0E25\u0E07\u0E21\u0E32\u0E43\u0E0A\u0E49\u0E44\u0E2B\u0E21?")), /*#__PURE__*/React.createElement("button", {
+    onClick: pullNow,
+    className: "press px-3.5 py-2 rounded-xl bg-brand/20 border border-brand/40 text-brand text-[13px] font-bold flex-shrink-0"
+  }, "Pull"))), backupDue && /*#__PURE__*/React.createElement("div", {
     className: "mb-3 anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
     className: "rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5 flex items-center gap-3"
@@ -1855,6 +1979,7 @@ function FuelSheet(_ref1) {
     showToast
   } = ctx;
   const [f, setF] = useState({});
+  const photoRef = useRef(null);
   useEffect(() => {
     if (open) setF(edit ? {
       ...edit
@@ -1866,13 +1991,24 @@ function FuelSheet(_ref1) {
       totalCost: '',
       isFull: true,
       station: '',
-      note: ''
+      note: '',
+      photo: ''
     });
   }, [open]);
   const set = (k, v) => setF(p => ({
     ...p,
     [k]: v
   }));
+  const onPhoto = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      set('photo', await compressImage(file, 1000, 0.6));
+    } catch (err) {
+      alert('แนบรูปไม่สำเร็จ');
+    }
+    e.target.value = '';
+  };
 
   // auto-calc total from liters * price
   const onLiters = v => {
@@ -1909,6 +2045,8 @@ function FuelSheet(_ref1) {
     const odo = parseFloat(f.odo),
       liters = parseFloat(f.liters);
     if (isNaN(odo) || isNaN(liters)) return;
+    const maxOdo = Math.max(0, ...data.fuelLogs.filter(x => x.id !== (edit && edit.id)).map(x => x.odo), data.vehicle.currentOdo || 0);
+    if (odo < maxOdo - 1 && !confirm('เลขไมล์ ' + fmt(odo) + ' น้อยกว่าค่าล่าสุด (' + fmt(maxOdo) + ' กม.) — บันทึกต่อไหม?')) return;
     const rec = {
       id: edit ? edit.id : uuid(),
       date: f.date,
@@ -1918,7 +2056,8 @@ function FuelSheet(_ref1) {
       totalCost: parseFloat(f.totalCost) || 0,
       isFull: !!f.isFull,
       station: f.station || '',
-      note: f.note || ''
+      note: f.note || '',
+      photo: f.photo || ''
     };
     update(d => {
       if (edit) {
@@ -1997,7 +2136,27 @@ function FuelSheet(_ref1) {
     value: f.note,
     onChange: v => set('note', v),
     placeholder: ""
-  }))), /*#__PURE__*/React.createElement(PrimaryBtn, {
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 (\u0E16\u0E49\u0E32\u0E21\u0E35)"
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: photoRef,
+    type: "file",
+    accept: "image/*",
+    className: "hidden",
+    onChange: onPhoto
+  }), f.photo ? /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("img", {
+    src: f.photo,
+    alt: "\u0E41\u0E19\u0E1A\u0E23\u0E39\u0E1B",
+    className: "w-full max-h-56 object-contain rounded-2xl border border-white/10 bg-ink-900/80"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => set('photo', ''),
+    className: "press absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+  }, "\u2715")) : /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: () => photoRef.current.click(),
+    className: "w-full text-center"
+  }, "\uD83D\uDCF7 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B (\u0E1A\u0E35\u0E1A\u0E2D\u0E31\u0E14\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34)")), /*#__PURE__*/React.createElement(PrimaryBtn, {
     onClick: save
   }, edit ? 'บันทึกการแก้ไข' : 'บันทึก')));
 }
@@ -2162,14 +2321,23 @@ function FuelScreen(_ref11) {
   } = ctx;
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState(null);
+  const [viewPhoto, setViewPhoto] = useState(null);
   const stats = useMemo(() => computeFuelStats(data.fuelLogs), [data.fuelLogs]);
   const list = [...stats].sort((a, b) => a.date < b.date ? 1 : -1);
   const totalCost = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
   const totalLiters = data.fuelLogs.reduce((s, f) => s + Number(f.liters || 0), 0);
   const avg = avgKmpl(stats);
   const del = id => {
-    if (confirm('ลบรายการนี้?')) update(d => {
+    const rec = data.fuelLogs.find(x => x.id === id);
+    if (!rec) return;
+    update(d => {
       d.fuelLogs = d.fuelLogs.filter(x => x.id !== id);
+    });
+    ctx.showToast('ลบแล้ว', {
+      label: 'เลิกทำ',
+      fn: () => update(d => {
+        d.fuelLogs.push(rec);
+      })
     });
   };
   const openEdit = f => {
@@ -2233,7 +2401,12 @@ function FuelScreen(_ref11) {
     className: "text-slate-500 font-normal"
   }, "(", fmt(f.dist), " \u0E01\u0E21.)")), f.note && /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-slate-500 mt-1"
-  }, f.note)), /*#__PURE__*/React.createElement("div", {
+  }, f.note), f.photo && /*#__PURE__*/React.createElement("img", {
+    src: f.photo,
+    onClick: () => setViewPhoto(f.photo),
+    alt: "\u0E23\u0E39\u0E1B",
+    className: "press mt-2 h-14 w-14 object-cover rounded-xl border border-white/10 cursor-pointer"
+  })), /*#__PURE__*/React.createElement("div", {
     className: "text-right flex-shrink-0"
   }, /*#__PURE__*/React.createElement("div", {
     className: "text-lg font-black num text-emerald-300"
@@ -2253,7 +2426,19 @@ function FuelScreen(_ref11) {
     },
     ctx: ctx,
     edit: edit
-  }));
+  }), viewPhoto && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 z-[60] flex items-center justify-center p-4 anim-fade",
+    onMouseDown: () => setViewPhoto(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute inset-0 bg-black/85"
+  }), /*#__PURE__*/React.createElement("img", {
+    src: viewPhoto,
+    alt: "\u0E23\u0E39\u0E1B",
+    className: "relative max-w-full max-h-[88vh] object-contain rounded-2xl anim-pop"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setViewPhoto(null),
+    className: "press absolute top-6 right-6 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-lg"
+  }, "\u2715")));
 }
 
 /* ============================== MAINT SCREEN ============================== */
@@ -2308,8 +2493,16 @@ function MaintScreen(_ref12) {
     showToast('บันทึก "' + item.title + '" แล้ว');
   };
   const delHist = id => {
-    if (confirm('ลบประวัตินี้?')) update(d => {
+    const rec = data.maintenanceLogs.find(x => x.id === id);
+    if (!rec) return;
+    update(d => {
       d.maintenanceLogs = d.maintenanceLogs.filter(x => x.id !== id);
+    });
+    showToast('ลบแล้ว', {
+      label: 'เลิกทำ',
+      fn: () => update(d => {
+        d.maintenanceLogs.push(rec);
+      })
     });
   };
   return /*#__PURE__*/React.createElement("div", {
@@ -2559,6 +2752,37 @@ function ReportScreen(_ref15) {
   const curMonth = todayStr().slice(0, 7);
   const monthSpend = monthMap[curMonth] ? monthMap[curMonth].fuel + monthMap[curMonth].maint : 0;
   const budget = Number(data.settings.monthlyBudget || 0);
+
+  // สถิติตลอดอายุ
+  const kmpls = fuelStats.filter(f => f.kmpl != null).map(f => f.kmpl);
+  const usage = computeUsage(data);
+  const monthKeys = Object.keys(monthMap);
+  let topMonth = null,
+    topVal = 0;
+  monthKeys.forEach(k => {
+    const v = monthMap[k].fuel + monthMap[k].maint;
+    if (v > topVal) {
+      topVal = v;
+      topMonth = k;
+    }
+  });
+  const totalLiters = data.fuelLogs.reduce((s, f) => s + Number(f.liters || 0), 0);
+  const life = [{
+    k: 'ค่าใช้จ่ายรวมตลอดอายุ',
+    v: baht(totalFuel + totalMaint)
+  }, kmpls.length ? {
+    k: 'กม./ล. ดีสุด / แย่สุด',
+    v: fmt(Math.max(...kmpls), 1) + ' / ' + fmt(Math.min(...kmpls), 1)
+  } : null, usage ? {
+    k: 'ใช้รถเฉลี่ย',
+    v: fmt(usage.kmPerDay, 0) + ' กม./วัน · ~' + fmt(usage.kmPerDay * 365) + ' กม./ปี'
+  } : null, {
+    k: 'น้ำมันรวม',
+    v: fmt(totalLiters, 1) + ' ลิตร'
+  }, topMonth ? {
+    k: 'เดือนใช้จ่ายเยอะสุด',
+    v: thMonthYear(topMonth + '-01') + ' · ' + baht(topVal)
+  } : null].filter(Boolean);
   return /*#__PURE__*/React.createElement("div", {
     className: "px-4 pt-safe"
   }, /*#__PURE__*/React.createElement(Header, {
@@ -2632,6 +2856,15 @@ function ReportScreen(_ref15) {
         background: c.color
       }
     })));
+  }))), life.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-2 flex items-center gap-2"
+  }, "\uD83C\uDFC6 \u0E2A\u0E16\u0E34\u0E15\u0E34\u0E15\u0E25\u0E2D\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"), life.map((r, i) => /*#__PURE__*/React.createElement(RefRow, {
+    key: i,
+    k: r.k,
+    v: r.v,
+    last: i === life.length - 1
   }))), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3261,7 +3494,7 @@ function InfoScreen(_ref21) {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.4 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v1.5 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
@@ -3347,18 +3580,17 @@ function SyncCard(_ref24) {
   } = _ref24;
   const {
     data,
-    setData,
-    showToast
+    update,
+    showToast,
+    sync,
+    setSyncCfg,
+    connected,
+    pushNow,
+    pullNow
   } = ctx;
-  const [sync, setSync] = useState(loadSync);
   const [tokenInput, setTokenInput] = useState('');
   const [gistInput, setGistInput] = useState('');
   const [busy, setBusy] = useState('');
-  const connected = !!(sync.token && sync.gistId);
-  const persist = s => {
-    saveSync(s);
-    setSync(s);
-  };
   const connectNew = async () => {
     const tk = tokenInput.trim();
     if (!tk) {
@@ -3368,7 +3600,7 @@ function SyncCard(_ref24) {
     setBusy('connect');
     try {
       const id = await gistCreate(tk, data);
-      persist({
+      setSyncCfg({
         token: tk,
         gistId: id,
         lastSync: new Date().toISOString()
@@ -3391,7 +3623,7 @@ function SyncCard(_ref24) {
     setBusy('connect');
     try {
       await gistPull(tk, id);
-      persist({
+      setSyncCfg({
         token: tk,
         gistId: id,
         lastSync: ''
@@ -3407,38 +3639,17 @@ function SyncCard(_ref24) {
   };
   const push = async () => {
     setBusy('push');
-    try {
-      await gistPush(sync.token, sync.gistId, data);
-      persist({
-        ...sync,
-        lastSync: new Date().toISOString()
-      });
-      showToast('ดันข้อมูลขึ้น GitHub แล้ว');
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setBusy('');
-    }
+    await pushNow(false);
+    setBusy('');
   };
   const pull = async () => {
     if (!confirm('ดึงข้อมูลจาก GitHub มาทับข้อมูลในเครื่องนี้?')) return;
     setBusy('pull');
-    try {
-      const remote = mergeImport(await gistPull(sync.token, sync.gistId));
-      setData(remote);
-      persist({
-        ...sync,
-        lastSync: new Date().toISOString()
-      });
-      showToast('ดึงข้อมูลล่าสุดแล้ว');
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setBusy('');
-    }
+    await pullNow();
+    setBusy('');
   };
   const disconnect = () => {
-    if (confirm('ตัดการเชื่อมต่อ? (ข้อมูลใน Gist ไม่ถูกลบ — แค่ลืม token/gist ในเครื่องนี้)')) persist({
+    if (confirm('ตัดการเชื่อมต่อ? (ข้อมูลใน Gist ไม่ถูกลบ — แค่ลืม token/gist ในเครื่องนี้)')) setSyncCfg({
       token: '',
       gistId: '',
       lastSync: ''
@@ -3448,7 +3659,7 @@ function SyncCard(_ref24) {
     className: "p-4 space-y-3 mb-5"
   }, /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-slate-400 leading-relaxed"
-  }, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E02\u0E36\u0E49\u0E19 GitHub Gist (\u0E25\u0E31\u0E1A) \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E40\u0E2D\u0E07 \u2014 \u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07 Export \u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2D\u0E07 \xB7 \u0E40\u0E1B\u0E34\u0E14\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E2D\u0E37\u0E48\u0E19\u0E01\u0E47 Pull \u0E21\u0E32\u0E43\u0E0A\u0E49\u0E15\u0E48\u0E2D\u0E44\u0E14\u0E49"), /*#__PURE__*/React.createElement(Field, {
+  }, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E02\u0E36\u0E49\u0E19 GitHub Gist (\u0E25\u0E31\u0E1A) \u2014 \u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07 Export \u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2D\u0E07 \xB7 \u0E40\u0E1B\u0E34\u0E14\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E2D\u0E37\u0E48\u0E19\u0E01\u0E47 Pull \u0E21\u0E32\u0E43\u0E0A\u0E49\u0E15\u0E48\u0E2D\u0E44\u0E14\u0E49"), /*#__PURE__*/React.createElement(Field, {
     label: "GitHub Token (\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19)",
     hint: "github.com/settings/tokens \u2192 Tokens (classic) \u2192 \u0E15\u0E34\u0E4A\u0E01\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C gist \u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E14\u0E35\u0E22\u0E27 \u2192 \u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38"
   }, /*#__PURE__*/React.createElement("input", {
@@ -3503,8 +3714,17 @@ function SyncCard(_ref24) {
     onClick: pull,
     className: "text-center"
   }, busy === 'pull' ? '...' : '⬇️ Pull ลง')), /*#__PURE__*/React.createElement("div", {
-    className: "text-[12px] text-slate-500 px-1"
-  }, "\u2B06\uFE0F Push = \u0E14\u0E31\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E02\u0E36\u0E49\u0E19 GitHub \xB7 \u2B07\uFE0F Pull = \u0E14\u0E36\u0E07\u0E08\u0E32\u0E01 GitHub \u0E21\u0E32\u0E17\u0E31\u0E1A\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49"), /*#__PURE__*/React.createElement("button", {
+    className: "flex items-center justify-between pt-1"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "font-semibold text-[15px]"
+  }, "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500"
+  }, "\u0E14\u0E31\u0E19\u0E02\u0E36\u0E49\u0E19\u0E40\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E41\u0E01\u0E49\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 (~3 \u0E27\u0E34)")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => update(d => d.settings.autoSync = !d.settings.autoSync),
+    className: 'press w-12 h-7 rounded-full transition relative flex-shrink-0 ' + (data.settings.autoSync ? 'bg-brand' : 'bg-white/15')
+  }, /*#__PURE__*/React.createElement("div", {
+    className: 'absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all ' + (data.settings.autoSync ? 'left-[1.4rem]' : 'left-0.5')
+  }))), /*#__PURE__*/React.createElement("button", {
     onClick: disconnect,
     className: "press w-full py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-400 text-[13px] font-semibold"
   }, "\u0E15\u0E31\u0E14\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D"));
@@ -3577,7 +3797,12 @@ try {
           icons: [{
             src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230a0b0f'/%3E%3Ctext x='50%25' y='54%25' font-size='240' font-family='Arial' font-weight='900' fill='%2338bdf8' text-anchor='middle' dominant-baseline='middle'%3EX%3C/text%3E%3C/svg%3E",
             sizes: '512x512', type: 'image/svg+xml', purpose: 'any'
-          }]
+          }],
+          shortcuts: [
+            { name: 'เติมน้ำมัน', short_name: 'เติมน้ำมัน', url: './?action=fuel' },
+            { name: 'บันทึกซ่อม', short_name: 'ซ่อมบำรุง', url: './?action=maint' },
+            { name: 'อัปเดตเลขไมล์', short_name: 'เลขไมล์', url: './?action=odo' },
+          ],
         };
         const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
         const link = document.createElement('link');
