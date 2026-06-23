@@ -1025,6 +1025,11 @@ function activeSchedule(settings) {
   return settings.enableThaiItems ? [...SCHEDULE, ...THAI_ITEMS] : SCHEDULE;
 }
 
+// ข้อมูลว่างเปล่าหรือยัง — กันการ push ทับของดี + แสดงหน้าต้อนรับ
+function isEmptyData(d) {
+  return !d || (!d.fuelLogs || !d.fuelLogs.length) && (!d.maintenanceLogs || !d.maintenanceLogs.length) && (!d.odoLogs || !d.odoLogs.length) && (!d.tireLogs || !d.tireLogs.length) && !(d.vehicle && d.vehicle.currentOdo) && (!d.scheduleState || !Object.keys(d.scheduleState).length);
+}
+
 // อัตราใช้รถเฉลี่ย (กม./วัน) จากจุดข้อมูลที่มีทั้งวันที่และเลขไมล์
 function computeUsage(data) {
   const pts = [];
@@ -1509,6 +1514,10 @@ function App() {
   const connected = !!(sync.token && sync.gistId);
   const pushNow = useCallback(async silent => {
     if (!sync.token || !sync.gistId) return;
+    if (isEmptyData(dataRef.current)) {
+      if (silent) return; // ห้าม auto-push ข้อมูลว่างไปทับของบน Gist เด็ดขาด
+      if (!confirm('ข้อมูลในเครื่องนี้ว่างเปล่า — การ Push จะไปทับข้อมูลบน GitHub\nยืนยันหรือไม่? (ถ้าจะกู้ข้อมูล ให้กด Pull แทน)')) return;
+    }
     try {
       await gistPush(sync.token, sync.gistId, dataRef.current);
       setSyncCfg({
@@ -1835,8 +1844,10 @@ function HomeScreen(_ref8) {
   const {
     data,
     update,
+    setData,
     showToast,
     exportData,
+    connected,
     remoteNewer,
     pullNow,
     pendingAction,
@@ -1859,6 +1870,23 @@ function HomeScreen(_ref8) {
     }
     e.target.value = '';
   };
+  const importRef = useRef(null);
+  const onImport = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        setData(mergeImport(JSON.parse(ev.target.result)));
+        showToast('นำเข้าข้อมูลสำเร็จ');
+      } catch (err) {
+        alert('นำเข้าไม่สำเร็จ: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+  const empty = isEmptyData(data);
   useEffect(() => {
     if (!pendingAction) return;
     if (pendingAction === 'fuel') setFuelOpen(true);else if (pendingAction === 'maint') setMaintOpen(true);else if (pendingAction === 'odo') setOdoOpen(true);
@@ -1909,7 +1937,32 @@ function HomeScreen(_ref8) {
     className: "text-2xl font-extrabold tracking-tight"
   }, "XMAX Logbook")), /*#__PURE__*/React.createElement("div", {
     className: "w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl"
-  }, "\uD83D\uDEF5")), remoteNewer && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDEF5")), empty && /*#__PURE__*/React.createElement(Card, {
+    glow: true,
+    className: "p-5 mb-3 anim-pop"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-2xl font-extrabold"
+  }, "\uD83D\uDC4B \u0E22\u0E34\u0E19\u0E14\u0E35\u0E15\u0E49\u0E2D\u0E19\u0E23\u0E31\u0E1A"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[13px] text-slate-400 leading-relaxed mt-1.5 mb-4"
+  }, "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49 XMAX Logbook \u2014 ", /*#__PURE__*/React.createElement("b", {
+    className: "text-amber-300"
+  }, "\u0E41\u0E19\u0E30\u0E19\u0E33\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19"), " \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E44\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2B\u0E32\u0E22\u0E40\u0E27\u0E25\u0E32\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07/\u0E25\u0E1A\u0E41\u0E2D\u0E1B"), /*#__PURE__*/React.createElement("input", {
+    ref: importRef,
+    type: "file",
+    accept: "application/json,.json",
+    className: "hidden",
+    onChange: onImport
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2.5"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => go('info'),
+    className: "press w-full py-3.5 rounded-2xl font-bold text-[15px] text-ink-950 bg-gradient-to-r from-brand to-cyan-300"
+  }, "\u2601\uFE0F \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 GitHub & \u0E01\u0E39\u0E49\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: () => importRef.current.click(),
+    className: "w-full text-center"
+  }, "\uD83D\uDCE5 \u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E44\u0E1F\u0E25\u0E4C JSON \u0E17\u0E35\u0E48\u0E40\u0E04\u0E22\u0E40\u0E0B\u0E1F"), /*#__PURE__*/React.createElement("div", {
+    className: "text-center text-[12px] text-slate-600 pt-1"
+  }, "\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E23\u0E34\u0E48\u0E21\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E2B\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07"))), remoteNewer && /*#__PURE__*/React.createElement("div", {
     className: "mb-3 anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
     className: "rounded-2xl bg-brand/10 border border-brand/30 p-3.5 flex items-center gap-3"
@@ -1927,19 +1980,26 @@ function HomeScreen(_ref8) {
   }, "Pull"))), backupDue && /*#__PURE__*/React.createElement("div", {
     className: "mb-3 anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5 flex items-center gap-3"
+    className: "rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "text-xl"
-  }, "\uD83D\uDCBE"), /*#__PURE__*/React.createElement("div", {
+  }, connected ? '💾' : '⚠️'), /*#__PURE__*/React.createElement("div", {
     className: "flex-1 min-w-0"
   }, /*#__PURE__*/React.createElement("div", {
     className: "text-[14px] font-bold text-amber-200"
-  }, "\u0E04\u0E27\u0E23\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /*#__PURE__*/React.createElement("div", {
+  }, connected ? 'ควรสำรองข้อมูล' : 'ยังไม่ได้ตั้งค่าสำรอง — เสี่ยงข้อมูลหาย'), /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-amber-200/70"
-  }, backupDays == null ? 'ยังไม่เคยสำรอง — Safari อาจล้างข้อมูลได้' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน')), /*#__PURE__*/React.createElement("button", {
+  }, connected ? backupDays == null ? 'กด Push ขึ้น GitHub เพื่อความปลอดภัย' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน' : 'ถ้าลบแอป/ล้างข้อมูล จะหายถาวร — ตั้งซิงค์ GitHub ไว้'))), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-2 mt-2.5"
+  }, !connected && /*#__PURE__*/React.createElement("button", {
+    onClick: () => go('info'),
+    className: "press py-2 rounded-xl bg-amber-400/25 border border-amber-400/40 text-amber-100 text-[13px] font-bold"
+  }, "\u2601\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E0B\u0E34\u0E07\u0E04\u0E4C"), /*#__PURE__*/React.createElement("button", {
     onClick: exportData,
-    className: "press px-3.5 py-2 rounded-xl bg-amber-400/20 border border-amber-400/30 text-amber-100 text-[13px] font-bold flex-shrink-0"
-  }, "Export"))), /*#__PURE__*/React.createElement(Card, {
+    className: 'press py-2 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-100 text-[13px] font-bold ' + (connected ? 'col-span-2' : '')
+  }, "\uD83D\uDCE5 Export \u0E44\u0E1F\u0E25\u0E4C")))), /*#__PURE__*/React.createElement(Card, {
     glow: true,
     className: "overflow-hidden anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3755,7 +3815,7 @@ function InfoScreen(_ref22) {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.9 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v2.0 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
@@ -3842,6 +3902,7 @@ function SyncCard(_ref25) {
   const {
     data,
     update,
+    setData,
     showToast,
     sync,
     setSyncCfg,
@@ -3883,15 +3944,20 @@ function SyncCard(_ref25) {
     }
     setBusy('connect');
     try {
-      await gistPull(tk, id);
+      const remote = mergeImport(await gistPull(tk, id));
+      if (!isEmptyData(data) && !confirm('ดึงข้อมูลจาก Gist มาทับข้อมูลในเครื่องนี้?')) {
+        setBusy('');
+        return;
+      }
+      setData(remote);
       setSyncCfg({
         token: tk,
         gistId: id,
-        lastSync: ''
+        lastSync: new Date().toISOString()
       });
       setTokenInput('');
       setGistInput('');
-      showToast('เชื่อมต่อสำเร็จ — กด Pull เพื่อดึงข้อมูล');
+      showToast('เชื่อมต่อ & ดึงข้อมูลแล้ว');
     } catch (e) {
       alert(e.message);
     } finally {

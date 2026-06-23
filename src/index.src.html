@@ -360,6 +360,18 @@
       return settings.enableThaiItems ? [...SCHEDULE, ...THAI_ITEMS] : SCHEDULE;
     }
 
+    // ข้อมูลว่างเปล่าหรือยัง — กันการ push ทับของดี + แสดงหน้าต้อนรับ
+    function isEmptyData(d) {
+      return !d || (
+        (!d.fuelLogs || !d.fuelLogs.length) &&
+        (!d.maintenanceLogs || !d.maintenanceLogs.length) &&
+        (!d.odoLogs || !d.odoLogs.length) &&
+        (!d.tireLogs || !d.tireLogs.length) &&
+        !(d.vehicle && d.vehicle.currentOdo) &&
+        (!d.scheduleState || !Object.keys(d.scheduleState).length)
+      );
+    }
+
     // อัตราใช้รถเฉลี่ย (กม./วัน) จากจุดข้อมูลที่มีทั้งวันที่และเลขไมล์
     function computeUsage(data) {
       const pts = [];
@@ -616,6 +628,10 @@
       const connected = !!(sync.token && sync.gistId);
       const pushNow = useCallback(async (silent) => {
         if (!sync.token || !sync.gistId) return;
+        if (isEmptyData(dataRef.current)) {
+          if (silent) return; // ห้าม auto-push ข้อมูลว่างไปทับของบน Gist เด็ดขาด
+          if (!confirm('ข้อมูลในเครื่องนี้ว่างเปล่า — การ Push จะไปทับข้อมูลบน GitHub\nยืนยันหรือไม่? (ถ้าจะกู้ข้อมูล ให้กด Pull แทน)')) return;
+        }
         try { await gistPush(sync.token, sync.gistId, dataRef.current); setSyncCfg({ ...sync, lastSync: new Date().toISOString() }); if (!silent) showToast('ดันขึ้น GitHub แล้ว'); }
         catch (e) { if (!silent) showToast('ซิงค์ไม่สำเร็จ: ' + e.message); }
       }, [sync]);
@@ -772,13 +788,21 @@
 
     /* ============================== HOME ============================== */
     function HomeScreen({ ctx, go }) {
-      const { data, update, showToast, exportData, remoteNewer, pullNow, pendingAction, setPendingAction } = ctx;
+      const { data, update, setData, showToast, exportData, connected, remoteNewer, pullNow, pendingAction, setPendingAction } = ctx;
       const [odoOpen, setOdoOpen] = useState(false);
       const [fuelOpen, setFuelOpen] = useState(false);
       const [maintOpen, setMaintOpen] = useState(false);
       const [quickItem, setQuickItem] = useState(null);
       const heroRef = useRef(null);
       const onHeroPhoto = async (e) => { const file = e.target.files[0]; if (!file) return; try { const b64 = await compressImage(file, 1100, 0.72); update(d => d.vehicle.heroPhoto = b64); showToast('ตั้งรูปรถแล้ว'); } catch (err) { alert('ใส่รูปไม่สำเร็จ'); } e.target.value = ''; };
+      const importRef = useRef(null);
+      const onImport = (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => { try { setData(mergeImport(JSON.parse(ev.target.result))); showToast('นำเข้าข้อมูลสำเร็จ'); } catch (err) { alert('นำเข้าไม่สำเร็จ: ' + err.message); } };
+        reader.readAsText(file); e.target.value = '';
+      };
+      const empty = isEmptyData(data);
 
       useEffect(() => {
         if (!pendingAction) return;
@@ -824,6 +848,20 @@
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl">🛵</div>
           </div>
 
+          {/* Welcome / restore (เมื่อข้อมูลว่าง) */}
+          {empty && (
+            <Card glow className="p-5 mb-3 anim-pop">
+              <div className="text-2xl font-extrabold">👋 ยินดีต้อนรับ</div>
+              <div className="text-[13px] text-slate-400 leading-relaxed mt-1.5 mb-4">เริ่มใช้ XMAX Logbook — <b className="text-amber-300">แนะนำตั้งค่าสำรองข้อมูลก่อน</b> เพื่อไม่ให้ข้อมูลหายเวลาเปลี่ยนเครื่อง/ลบแอป</div>
+              <input ref={importRef} type="file" accept="application/json,.json" className="hidden" onChange={onImport} />
+              <div className="space-y-2.5">
+                <button onClick={() => go('info')} className="press w-full py-3.5 rounded-2xl font-bold text-[15px] text-ink-950 bg-gradient-to-r from-brand to-cyan-300">☁️ เชื่อม GitHub & กู้ข้อมูล</button>
+                <GhostBtn onClick={() => importRef.current.click()} className="w-full text-center">📥 นำเข้าไฟล์ JSON ที่เคยเซฟ</GhostBtn>
+                <div className="text-center text-[12px] text-slate-600 pt-1">หรือเริ่มกรอกข้อมูลใหม่ได้เลยด้านล่าง</div>
+              </div>
+            </Card>
+          )}
+
           {/* Remote newer (cloud) */}
           {remoteNewer && (
             <div className="mb-3 anim-pop">
@@ -841,13 +879,18 @@
           {/* Backup reminder */}
           {backupDue && (
             <div className="mb-3 anim-pop">
-              <div className="rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5 flex items-center gap-3">
-                <div className="text-xl">💾</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-bold text-amber-200">ควรสำรองข้อมูล</div>
-                  <div className="text-[12px] text-amber-200/70">{backupDays == null ? 'ยังไม่เคยสำรอง — Safari อาจล้างข้อมูลได้' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน'}</div>
+              <div className="rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="text-xl">{connected ? '💾' : '⚠️'}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[14px] font-bold text-amber-200">{connected ? 'ควรสำรองข้อมูล' : 'ยังไม่ได้ตั้งค่าสำรอง — เสี่ยงข้อมูลหาย'}</div>
+                    <div className="text-[12px] text-amber-200/70">{connected ? (backupDays == null ? 'กด Push ขึ้น GitHub เพื่อความปลอดภัย' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน') : 'ถ้าลบแอป/ล้างข้อมูล จะหายถาวร — ตั้งซิงค์ GitHub ไว้'}</div>
+                  </div>
                 </div>
-                <button onClick={exportData} className="press px-3.5 py-2 rounded-xl bg-amber-400/20 border border-amber-400/30 text-amber-100 text-[13px] font-bold flex-shrink-0">Export</button>
+                <div className="grid grid-cols-2 gap-2 mt-2.5">
+                  {!connected && <button onClick={() => go('info')} className="press py-2 rounded-xl bg-amber-400/25 border border-amber-400/40 text-amber-100 text-[13px] font-bold">☁️ ตั้งซิงค์</button>}
+                  <button onClick={exportData} className={'press py-2 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-100 text-[13px] font-bold ' + (connected ? 'col-span-2' : '')}>📥 Export ไฟล์</button>
+                </div>
               </div>
             </div>
           )}
@@ -1841,7 +1884,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.9 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v2.0 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
@@ -1874,7 +1917,7 @@
     }
 
     function SyncCard({ ctx }) {
-      const { data, update, showToast, sync, setSyncCfg, connected, pushNow, pullNow } = ctx;
+      const { data, update, setData, showToast, sync, setSyncCfg, connected, pushNow, pullNow } = ctx;
       const [tokenInput, setTokenInput] = useState('');
       const [gistInput, setGistInput] = useState('');
       const [busy, setBusy] = useState('');
@@ -1889,7 +1932,14 @@
         const tk = tokenInput.trim(), id = gistInput.trim();
         if (!tk || !id) { alert('ใส่ token และ Gist ID'); return; }
         setBusy('connect');
-        try { await gistPull(tk, id); setSyncCfg({ token: tk, gistId: id, lastSync: '' }); setTokenInput(''); setGistInput(''); showToast('เชื่อมต่อสำเร็จ — กด Pull เพื่อดึงข้อมูล'); }
+        try {
+          const remote = mergeImport(await gistPull(tk, id));
+          if (!isEmptyData(data) && !confirm('ดึงข้อมูลจาก Gist มาทับข้อมูลในเครื่องนี้?')) { setBusy(''); return; }
+          setData(remote);
+          setSyncCfg({ token: tk, gistId: id, lastSync: new Date().toISOString() });
+          setTokenInput(''); setGistInput('');
+          showToast('เชื่อมต่อ & ดึงข้อมูลแล้ว');
+        }
         catch (e) { alert(e.message); } finally { setBusy(''); }
       };
       const push = async () => { setBusy('push'); await pushNow(false); setBusy(''); };
