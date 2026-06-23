@@ -65,17 +65,17 @@
     :root {
       color-scheme: dark;
       --ink-900: 10 11 15; --ink-850: 14 16 22; --ink-800: 19 22 31;
-      --page-bg: #070809;
+      --page-bg: #060912;
     }
     html.light {
       color-scheme: light;
       --ink-900: 255 255 255; --ink-850: 243 245 249; --ink-800: 255 255 255;
-      --page-bg: #eef1f6;
+      --page-bg: #eaeef6;
     }
     * { -webkit-tap-highlight-color: transparent; }
     html, body { background: var(--page-bg); overscroll-behavior-y: none; }
-    .app-bg { background: radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%); }
-    html.light .app-bg { background: radial-gradient(120% 80% at 50% -10%, #dbeafe 0%, #eef1f6 45%, #e9edf4 100%); }
+    .app-bg { background: radial-gradient(125% 92% at 50% -12%, #123a86 0%, #0a1a3c 36%, #060912 100%); }
+    html.light .app-bg { background: radial-gradient(125% 92% at 50% -12%, #cfe0fb 0%, #e6ecf7 42%, #e3e8f2 100%); }
     /* light-mode overrides for dark-only utility classes */
     html.light .text-white { color: #0f1521; }
     html.light .text-slate-200 { color: #1e2633; }
@@ -515,7 +515,7 @@
         const light = data.settings.theme === 'light';
         document.documentElement.classList.toggle('light', light);
         const meta = document.querySelector('meta[name="theme-color"]');
-        if (meta) meta.setAttribute('content', light ? '#eef1f6' : '#0a0b0f');
+        if (meta) meta.setAttribute('content', light ? '#eaeef6' : '#0a1a3c');
       }, [data.settings.theme]);
       const update = useCallback((fn) => setData(d => { const n = structuredClone(d); fn(n); return n; }), []);
       const showToast = useCallback((msg, action) => { setToast({ msg, action }); setTimeout(() => setToast(null), action ? 5000 : 2200); }, []);
@@ -622,6 +622,31 @@
       );
     }
 
+    /* ภาพสกู๊ตเตอร์ XMAX แบบ SVG (side profile) */
+    function ScooterArt({ className = '' }) {
+      const body = "M46,128 C40,108 50,98 72,96 C110,92 150,92 184,98 C192,100 196,108 200,118 L222,124 L250,124 C262,124 266,112 270,100 C276,82 282,68 298,58 C306,53 314,52 320,54 C330,57 332,68 328,80 L322,80 C326,96 326,112 322,124 C320,132 314,136 304,136 L120,134 C90,134 58,132 50,134 Z";
+      const topline = "M46,128 C40,108 50,98 72,96 C110,92 150,92 184,98 C192,100 196,108 200,118 L222,124 L250,124 C262,124 266,112 270,100 C276,82 282,68 298,58 C306,53 314,52 320,54";
+      return (
+        <svg viewBox="0 0 360 180" className={className} preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="sbody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3b82f6" /><stop offset="1" stopColor="#0b1e4d" /></linearGradient>
+            <radialGradient id="swheel" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stopColor="#1e293b" /><stop offset="1" stopColor="#020617" /></radialGradient>
+            <filter id="sglow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="3.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+          </defs>
+          <ellipse cx="184" cy="170" rx="148" ry="9" fill="#38bdf8" opacity="0.12" />
+          <circle cx="82" cy="136" r="30" fill="url(#swheel)" stroke="#0b1220" strokeWidth="2" />
+          <circle cx="282" cy="136" r="30" fill="url(#swheel)" stroke="#0b1220" strokeWidth="2" />
+          <circle cx="82" cy="136" r="12.5" fill="none" stroke="#38bdf8" strokeWidth="2.5" opacity="0.85" />
+          <circle cx="282" cy="136" r="12.5" fill="none" stroke="#38bdf8" strokeWidth="2.5" opacity="0.85" />
+          <path d={body} fill="url(#sbody)" />
+          <path d="M70,97 C70,91 78,89 96,89 L170,91 C180,91 183,96 181,101 L70,101 Z" fill="#0a1430" opacity="0.55" />
+          <path d="M306,58 C297,40 295,26 301,14 L314,16 C313,32 319,46 323,60 Z" fill="#7dd3fc" fillOpacity="0.18" stroke="#7dd3fc" strokeOpacity="0.45" strokeWidth="1.5" />
+          <path d={topline} fill="none" stroke="#bae6fd" strokeWidth="2.5" strokeLinecap="round" opacity="0.9" filter="url(#sglow)" />
+          <path d="M319,96 L333,103 L332,114 L320,110 Z" fill="#e0f2fe" filter="url(#sglow)" />
+        </svg>
+      );
+    }
+
     /* ============================== HOME ============================== */
     function HomeScreen({ ctx, go }) {
       const { data, update, showToast, exportData, remoteNewer, pullNow, pendingAction, setPendingAction } = ctx;
@@ -702,19 +727,47 @@
             </div>
           )}
 
-          {/* ODO Hero */}
+          {/* Hero — Yamaha Connect style */}
           <Card glow className="overflow-hidden anim-pop">
-            <div className="relative p-5">
-              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-brand/10 blur-3xl"></div>
-              <div className="relative flex items-end justify-between">
-                <div>
-                  <div className="text-[13px] text-brand/90 font-semibold uppercase tracking-wider">เลขไมล์ปัจจุบัน</div>
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-5xl font-black tracking-tight num">{fmt(data.vehicle.currentOdo)}</span>
-                    <span className="text-lg text-slate-400 font-semibold">กม.</span>
+            <div className="relative">
+              <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 110% at 85% -10%, rgba(56,189,248,0.20), transparent 55%)' }}></div>
+              <div className="absolute -left-10 top-10 w-44 h-44 rounded-full bg-brand/10 blur-3xl"></div>
+              <div className="relative p-5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-[12px] text-brand font-extrabold uppercase tracking-[0.22em]">XMAX 300</div>
+                    <div className="text-[13px] text-slate-400 mt-0.5">{data.vehicle.nickname || 'XMAX'}{data.vehicle.plate ? ' · ' + data.vehicle.plate : ''}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">สถานะ</div>
+                    <div className={'text-[13px] font-bold ' + (alerts.length ? 'text-amber-300' : 'text-emerald-300')}>{alerts.length ? '⚠ ' + alerts.length + ' รายการ' : '● พร้อมใช้'}</div>
                   </div>
                 </div>
-                <button onClick={() => setOdoOpen(true)} className="press px-4 py-2.5 rounded-2xl bg-brand/15 border border-brand/30 text-brand text-sm font-bold">อัปเดต</button>
+
+                <ScooterArt className="w-full h-36 my-1" />
+
+                <div className="flex items-end justify-between">
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-[0.18em]">เลขไมล์รวม</div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[2.7rem] leading-none font-black tracking-tight num">{fmt(data.vehicle.currentOdo)}</span>
+                      <span className="text-base text-slate-400 font-semibold">กม.</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setOdoOpen(true)} className="press px-4 py-2.5 rounded-2xl bg-brand/15 border border-brand/30 text-brand text-sm font-bold">อัปเดต</button>
+                </div>
+
+                {fuelEst && (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-[12px] mb-1.5">
+                      <span className={'font-semibold ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-slate-300')}>⛽ วิ่งได้อีก ~{fmt(fuelEst.remKm)} กม.{fuelEst.level === 'overdue' ? ' · ใกล้หมด!' : fuelEst.level === 'warn' ? ' · ควรเติม' : ''}</span>
+                      <span className="num text-slate-500">{fmt(fuelEst.remL, 1)}/{TANK_L} ล.</span>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
+                      <div className={'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300')} style={{ width: Math.max(2, Math.min(100, (fuelEst.remL / TANK_L) * 100)) + '%' }}></div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>
@@ -725,35 +778,6 @@
             <MiniStat label="ราคาเติมล่าสุด" value={lastFuel ? fmt(lastFuel.pricePerL, 2) : '–'} unit="฿/ล." accent="text-cyan-300" />
             <MiniStat label="ต้นทุน/กม." value={cpk ? fmt(cpk, 2) : '–'} unit="฿/กม." accent="text-emerald-300" />
           </div>
-
-          {/* Fuel range estimate */}
-          {fuelEst && (
-            <Card className={'p-4 mt-3 ' + (fuelEst.level === 'overdue' ? 'ring-1 ring-rose-500/40' : fuelEst.level === 'warn' ? 'ring-1 ring-amber-400/40' : '')}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2"><span className="text-lg">⛽</span><span className="font-bold text-[15px]">น้ำมันคงเหลือ (ประมาณ)</span></div>
-                {fuelEst.level === 'overdue' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold">ใกล้หมด!</span>}
-                {fuelEst.level === 'warn' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-bold">ควรเติม</span>}
-              </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className={'text-4xl font-black num ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-brand')}>{fmt(fuelEst.remKm)}</span>
-                    <span className="text-slate-400 font-semibold">กม.</span>
-                  </div>
-                  <div className="text-[12px] text-slate-500 mt-0.5 num">เหลือ ~{fmt(fuelEst.remL, 1)} ล. จาก {TANK_L} ล.</div>
-                </div>
-                <div className="text-right text-[11px] text-slate-500">
-                  <div>วิ่งมาแล้ว {fmt(fuelEst.kmSince)} กม.</div>
-                  <div>ตั้งแต่เติมเต็มถัง</div>
-                </div>
-              </div>
-              {/* fuel bar */}
-              <div className="mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden">
-                <div className={'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300')} style={{ width: Math.max(2, Math.min(100, (fuelEst.remL / TANK_L) * 100)) + '%' }}></div>
-              </div>
-              <div className="text-[11px] text-slate-600 mt-1.5">* ประเมินคร่าวๆ จากค่าเฉลี่ย {fmt(fuelEst.avg, 1)} กม./ล. — ใช้อ้างอิงเท่านั้น</div>
-            </Card>
-          )}
 
           {/* Actions */}
           <div className="grid grid-cols-2 gap-3 mt-3">
@@ -1685,7 +1709,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.5 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.6 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>

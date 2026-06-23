@@ -446,17 +446,17 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
     :root {
       color-scheme: dark;
       --ink-900: 10 11 15; --ink-850: 14 16 22; --ink-800: 19 22 31;
-      --page-bg: #070809;
+      --page-bg: #060912;
     }
     html.light {
       color-scheme: light;
       --ink-900: 255 255 255; --ink-850: 243 245 249; --ink-800: 255 255 255;
-      --page-bg: #eef1f6;
+      --page-bg: #eaeef6;
     }
     * { -webkit-tap-highlight-color: transparent; }
     html, body { background: var(--page-bg); overscroll-behavior-y: none; }
-    .app-bg { background: radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%); }
-    html.light .app-bg { background: radial-gradient(120% 80% at 50% -10%, #dbeafe 0%, #eef1f6 45%, #e9edf4 100%); }
+    .app-bg { background: radial-gradient(125% 92% at 50% -12%, #123a86 0%, #0a1a3c 36%, #060912 100%); }
+    html.light .app-bg { background: radial-gradient(125% 92% at 50% -12%, #cfe0fb 0%, #e6ecf7 42%, #e3e8f2 100%); }
     /* light-mode overrides for dark-only utility classes */
     html.light .text-white { color: #0f1521; }
     html.light .text-slate-200 { color: #1e2633; }
@@ -1410,7 +1410,7 @@ function App() {
     const light = data.settings.theme === 'light';
     document.documentElement.classList.toggle('light', light);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', light ? '#eef1f6' : '#0a0b0f');
+    if (meta) meta.setAttribute('content', light ? '#eaeef6' : '#0a1a3c');
   }, [data.settings.theme]);
   const update = useCallback(fn => setData(d => {
     const n = structuredClone(d);
@@ -1600,12 +1600,126 @@ function App() {
   }, toast.action.label)))));
 }
 
+/* ภาพสกู๊ตเตอร์ XMAX แบบ SVG (side profile) */
+function ScooterArt(_ref7) {
+  let {
+    className = ''
+  } = _ref7;
+  const body = "M46,128 C40,108 50,98 72,96 C110,92 150,92 184,98 C192,100 196,108 200,118 L222,124 L250,124 C262,124 266,112 270,100 C276,82 282,68 298,58 C306,53 314,52 320,54 C330,57 332,68 328,80 L322,80 C326,96 326,112 322,124 C320,132 314,136 304,136 L120,134 C90,134 58,132 50,134 Z";
+  const topline = "M46,128 C40,108 50,98 72,96 C110,92 150,92 184,98 C192,100 196,108 200,118 L222,124 L250,124 C262,124 266,112 270,100 C276,82 282,68 298,58 C306,53 314,52 320,54";
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 360 180",
+    className: className,
+    preserveAspectRatio: "xMidYMid meet",
+    xmlns: "http://www.w3.org/2000/svg"
+  }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
+    id: "sbody",
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1"
+  }, /*#__PURE__*/React.createElement("stop", {
+    offset: "0",
+    stopColor: "#3b82f6"
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "1",
+    stopColor: "#0b1e4d"
+  })), /*#__PURE__*/React.createElement("radialGradient", {
+    id: "swheel",
+    cx: "0.5",
+    cy: "0.4",
+    r: "0.6"
+  }, /*#__PURE__*/React.createElement("stop", {
+    offset: "0",
+    stopColor: "#1e293b"
+  }), /*#__PURE__*/React.createElement("stop", {
+    offset: "1",
+    stopColor: "#020617"
+  })), /*#__PURE__*/React.createElement("filter", {
+    id: "sglow",
+    x: "-40%",
+    y: "-40%",
+    width: "180%",
+    height: "180%"
+  }, /*#__PURE__*/React.createElement("feGaussianBlur", {
+    stdDeviation: "3.5",
+    result: "b"
+  }), /*#__PURE__*/React.createElement("feMerge", null, /*#__PURE__*/React.createElement("feMergeNode", {
+    in: "b"
+  }), /*#__PURE__*/React.createElement("feMergeNode", {
+    in: "SourceGraphic"
+  })))), /*#__PURE__*/React.createElement("ellipse", {
+    cx: "184",
+    cy: "170",
+    rx: "148",
+    ry: "9",
+    fill: "#38bdf8",
+    opacity: "0.12"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "82",
+    cy: "136",
+    r: "30",
+    fill: "url(#swheel)",
+    stroke: "#0b1220",
+    strokeWidth: "2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "282",
+    cy: "136",
+    r: "30",
+    fill: "url(#swheel)",
+    stroke: "#0b1220",
+    strokeWidth: "2"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "82",
+    cy: "136",
+    r: "12.5",
+    fill: "none",
+    stroke: "#38bdf8",
+    strokeWidth: "2.5",
+    opacity: "0.85"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "282",
+    cy: "136",
+    r: "12.5",
+    fill: "none",
+    stroke: "#38bdf8",
+    strokeWidth: "2.5",
+    opacity: "0.85"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: body,
+    fill: "url(#sbody)"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M70,97 C70,91 78,89 96,89 L170,91 C180,91 183,96 181,101 L70,101 Z",
+    fill: "#0a1430",
+    opacity: "0.55"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M306,58 C297,40 295,26 301,14 L314,16 C313,32 319,46 323,60 Z",
+    fill: "#7dd3fc",
+    fillOpacity: "0.18",
+    stroke: "#7dd3fc",
+    strokeOpacity: "0.45",
+    strokeWidth: "1.5"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: topline,
+    fill: "none",
+    stroke: "#bae6fd",
+    strokeWidth: "2.5",
+    strokeLinecap: "round",
+    opacity: "0.9",
+    filter: "url(#sglow)"
+  }), /*#__PURE__*/React.createElement("path", {
+    d: "M319,96 L333,103 L332,114 L320,110 Z",
+    fill: "#e0f2fe",
+    filter: "url(#sglow)"
+  }));
+}
+
 /* ============================== HOME ============================== */
-function HomeScreen(_ref7) {
+function HomeScreen(_ref8) {
   let {
     ctx,
     go
-  } = _ref7;
+  } = _ref8;
   const {
     data,
     update,
@@ -1704,23 +1818,59 @@ function HomeScreen(_ref7) {
     glow: true,
     className: "overflow-hidden anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute inset-0",
+    style: {
+      background: 'radial-gradient(120% 110% at 85% -10%, rgba(56,189,248,0.20), transparent 55%)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "absolute -left-10 top-10 w-44 h-44 rounded-full bg-brand/10 blur-3xl"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "relative p-5"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "absolute -right-8 -top-8 w-40 h-40 rounded-full bg-brand/10 blur-3xl"
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "relative flex items-end justify-between"
+    className: "flex items-start justify-between"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "text-[13px] text-brand/90 font-semibold uppercase tracking-wider"
-  }, "\u0E40\u0E25\u0E02\u0E44\u0E21\u0E25\u0E4C\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19"), /*#__PURE__*/React.createElement("div", {
-    className: "flex items-baseline gap-2 mt-1"
+    className: "text-[12px] text-brand font-extrabold uppercase tracking-[0.22em]"
+  }, "XMAX 300"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[13px] text-slate-400 mt-0.5"
+  }, data.vehicle.nickname || 'XMAX', data.vehicle.plate ? ' · ' + data.vehicle.plate : '')), /*#__PURE__*/React.createElement("div", {
+    className: "text-right"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-slate-500 uppercase tracking-wider"
+  }, "\u0E2A\u0E16\u0E32\u0E19\u0E30"), /*#__PURE__*/React.createElement("div", {
+    className: 'text-[13px] font-bold ' + (alerts.length ? 'text-amber-300' : 'text-emerald-300')
+  }, alerts.length ? '⚠ ' + alerts.length + ' รายการ' : '● พร้อมใช้'))), /*#__PURE__*/React.createElement(ScooterArt, {
+    className: "w-full h-36 my-1"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-end justify-between"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "text-[10px] text-slate-500 uppercase tracking-[0.18em]"
+  }, "\u0E40\u0E25\u0E02\u0E44\u0E21\u0E25\u0E4C\u0E23\u0E27\u0E21"), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline gap-1.5"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "text-5xl font-black tracking-tight num"
+    className: "text-[2.7rem] leading-none font-black tracking-tight num"
   }, fmt(data.vehicle.currentOdo)), /*#__PURE__*/React.createElement("span", {
-    className: "text-lg text-slate-400 font-semibold"
+    className: "text-base text-slate-400 font-semibold"
   }, "\u0E01\u0E21."))), /*#__PURE__*/React.createElement("button", {
     onClick: () => setOdoOpen(true),
     className: "press px-4 py-2.5 rounded-2xl bg-brand/15 border border-brand/30 text-brand text-sm font-bold"
-  }, "\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15")))), /*#__PURE__*/React.createElement("div", {
+  }, "\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15")), fuelEst && /*#__PURE__*/React.createElement("div", {
+    className: "mt-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between text-[12px] mb-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: 'font-semibold ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-slate-300')
+  }, "\u26FD \u0E27\u0E34\u0E48\u0E07\u0E44\u0E14\u0E49\u0E2D\u0E35\u0E01 ~", fmt(fuelEst.remKm), " \u0E01\u0E21.", fuelEst.level === 'overdue' ? ' · ใกล้หมด!' : fuelEst.level === 'warn' ? ' · ควรเติม' : ''), /*#__PURE__*/React.createElement("span", {
+    className: "num text-slate-500"
+  }, fmt(fuelEst.remL, 1), "/", TANK_L, " \u0E25.")), /*#__PURE__*/React.createElement("div", {
+    className: "h-2.5 rounded-full bg-white/10 overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: 'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300'),
+    style: {
+      width: Math.max(2, Math.min(100, fuelEst.remL / TANK_L * 100)) + '%'
+    }
+  })))))), /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-3 gap-3 mt-3"
   }, /*#__PURE__*/React.createElement(MiniStat, {
     label: "\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22",
@@ -1737,42 +1887,7 @@ function HomeScreen(_ref7) {
     value: cpk ? fmt(cpk, 2) : '–',
     unit: "\u0E3F/\u0E01\u0E21.",
     accent: "text-emerald-300"
-  })), fuelEst && /*#__PURE__*/React.createElement(Card, {
-    className: 'p-4 mt-3 ' + (fuelEst.level === 'overdue' ? 'ring-1 ring-rose-500/40' : fuelEst.level === 'warn' ? 'ring-1 ring-amber-400/40' : '')
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between mb-2"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "text-lg"
-  }, "\u26FD"), /*#__PURE__*/React.createElement("span", {
-    className: "font-bold text-[15px]"
-  }, "\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D (\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13)")), fuelEst.level === 'overdue' && /*#__PURE__*/React.createElement("span", {
-    className: "text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold"
-  }, "\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14!"), fuelEst.level === 'warn' && /*#__PURE__*/React.createElement("span", {
-    className: "text-[11px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-bold"
-  }, "\u0E04\u0E27\u0E23\u0E40\u0E15\u0E34\u0E21")), /*#__PURE__*/React.createElement("div", {
-    className: "flex items-end justify-between"
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-baseline gap-1.5"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: 'text-4xl font-black num ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-brand')
-  }, fmt(fuelEst.remKm)), /*#__PURE__*/React.createElement("span", {
-    className: "text-slate-400 font-semibold"
-  }, "\u0E01\u0E21.")), /*#__PURE__*/React.createElement("div", {
-    className: "text-[12px] text-slate-500 mt-0.5 num"
-  }, "\u0E40\u0E2B\u0E25\u0E37\u0E2D ~", fmt(fuelEst.remL, 1), " \u0E25. \u0E08\u0E32\u0E01 ", TANK_L, " \u0E25.")), /*#__PURE__*/React.createElement("div", {
-    className: "text-right text-[11px] text-slate-500"
-  }, /*#__PURE__*/React.createElement("div", null, "\u0E27\u0E34\u0E48\u0E07\u0E21\u0E32\u0E41\u0E25\u0E49\u0E27 ", fmt(fuelEst.kmSince), " \u0E01\u0E21."), /*#__PURE__*/React.createElement("div", null, "\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E40\u0E15\u0E34\u0E21\u0E40\u0E15\u0E47\u0E21\u0E16\u0E31\u0E07"))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: 'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300'),
-    style: {
-      width: Math.max(2, Math.min(100, fuelEst.remL / TANK_L * 100)) + '%'
-    }
   })), /*#__PURE__*/React.createElement("div", {
-    className: "text-[11px] text-slate-600 mt-1.5"
-  }, "* \u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E04\u0E23\u0E48\u0E32\u0E27\u0E46 \u0E08\u0E32\u0E01\u0E04\u0E48\u0E32\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22 ", fmt(fuelEst.avg, 1), " \u0E01\u0E21./\u0E25. \u2014 \u0E43\u0E0A\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19")), /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3 mt-3"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setFuelOpen(true),
@@ -1857,13 +1972,13 @@ function HomeScreen(_ref7) {
     odo: data.vehicle.currentOdo
   }));
 }
-function MiniStat(_ref8) {
+function MiniStat(_ref9) {
   let {
     label,
     value,
     unit,
     accent
-  } = _ref8;
+  } = _ref9;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-3.5"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1874,13 +1989,13 @@ function MiniStat(_ref8) {
     className: "text-[10px] text-slate-500 font-medium"
   }, unit));
 }
-function ConfirmDone(_ref9) {
+function ConfirmDone(_ref0) {
   let {
     item,
     onClose,
     onConfirm,
     odo
-  } = _ref9;
+  } = _ref0;
   if (!item) return null;
   return /*#__PURE__*/React.createElement("div", {
     className: "fixed inset-0 z-50 flex items-center justify-center p-6 anim-fade",
@@ -1910,12 +2025,12 @@ function ConfirmDone(_ref9) {
 }
 
 /* ============================== SHEETS ============================== */
-function OdoSheet(_ref0) {
+function OdoSheet(_ref1) {
   let {
     open,
     onClose,
     ctx
-  } = _ref0;
+  } = _ref1;
   const {
     data,
     update,
@@ -1966,13 +2081,13 @@ function OdoSheet(_ref0) {
     onClick: save
   }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")));
 }
-function FuelSheet(_ref1) {
+function FuelSheet(_ref10) {
   let {
     open,
     onClose,
     ctx,
     edit
-  } = _ref1;
+  } = _ref10;
   const {
     data,
     update,
@@ -2160,14 +2275,14 @@ function FuelSheet(_ref1) {
     onClick: save
   }, edit ? 'บันทึกการแก้ไข' : 'บันทึก')));
 }
-function MaintSheet(_ref10) {
+function MaintSheet(_ref11) {
   let {
     open,
     onClose,
     ctx,
     edit,
     presetKey
-  } = _ref10;
+  } = _ref11;
   const {
     data,
     update,
@@ -2311,10 +2426,10 @@ function MaintSheet(_ref10) {
 }
 
 /* ============================== FUEL SCREEN ============================== */
-function FuelScreen(_ref11) {
+function FuelScreen(_ref12) {
   let {
     ctx
-  } = _ref11;
+  } = _ref12;
   const {
     data,
     update
@@ -2442,10 +2557,10 @@ function FuelScreen(_ref11) {
 }
 
 /* ============================== MAINT SCREEN ============================== */
-function MaintScreen(_ref12) {
+function MaintScreen(_ref13) {
   let {
     ctx
-  } = _ref12;
+  } = _ref13;
   const {
     data,
     update,
@@ -2512,8 +2627,8 @@ function MaintScreen(_ref12) {
     subtitle: "Yamaha XMAX 300"
   }), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-1 p-1 rounded-2xl bg-ink-900/80 border border-white/[0.06] mb-4"
-  }, [['schedule', 'ตารางบำรุง'], ['history', 'ประวัติ']].map(_ref13 => {
-    let [k, l] = _ref13;
+  }, [['schedule', 'ตารางบำรุง'], ['history', 'ประวัติ']].map(_ref14 => {
+    let [k, l] = _ref14;
     return /*#__PURE__*/React.createElement("button", {
       key: k,
       onClick: () => setSub(k),
@@ -2523,8 +2638,8 @@ function MaintScreen(_ref12) {
     className: "space-y-2.5"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1"
-  }, [['all', 'ทั้งหมด'], ['due', 'ใกล้ถึง' + (dueCount ? ' (' + dueCount + ')' : '')], ['diy', '🔧 ทำเอง'], ['shop', '★ งานศูนย์']].map(_ref14 => {
-    let [k, l] = _ref14;
+  }, [['all', 'ทั้งหมด'], ['due', 'ใกล้ถึง' + (dueCount ? ' (' + dueCount + ')' : '')], ['diy', '🔧 ทำเอง'], ['shop', '★ งานศูนย์']].map(_ref15 => {
+    let [k, l] = _ref15;
     return /*#__PURE__*/React.createElement("button", {
       key: k,
       onClick: () => setFilter(k),
@@ -2680,10 +2795,10 @@ function MaintScreen(_ref12) {
 }
 
 /* ============================== REPORT SCREEN ============================== */
-function ReportScreen(_ref15) {
+function ReportScreen(_ref16) {
   let {
     ctx
-  } = _ref15;
+  } = _ref16;
   const {
     data
   } = ctx;
@@ -2907,11 +3022,11 @@ function ReportScreen(_ref15) {
     fuelStats: fuelStats
   }));
 }
-function TripCalc(_ref16) {
+function TripCalc(_ref17) {
   let {
     data,
     fuelStats
-  } = _ref16;
+  } = _ref17;
   const [dist, setDist] = useState('');
   const avg = avgKmpl(fuelStats);
   const lastFuel = [...data.fuelLogs].sort((a, b) => a.date < b.date ? 1 : -1)[0];
@@ -2962,10 +3077,10 @@ function TripCalc(_ref16) {
 }
 
 /* ---- Custom SVG charts (offline, no deps) ---- */
-function BarChart(_ref17) {
+function BarChart(_ref18) {
   let {
     data
-  } = _ref17;
+  } = _ref18;
   const W = 320,
     H = 200,
     padL = 34,
@@ -3033,11 +3148,11 @@ function BarChart(_ref17) {
     }, d.name));
   }));
 }
-function LineChart(_ref18) {
+function LineChart(_ref19) {
   let {
     data,
     color = '#38bdf8'
-  } = _ref18;
+  } = _ref19;
   const W = 320,
     H = 190,
     padL = 34,
@@ -3136,13 +3251,13 @@ function niceCeil(v) {
 function kFmt(v) {
   return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
 }
-function BigStat(_ref19) {
+function BigStat(_ref20) {
   let {
     label,
     value,
     icon,
     accent
-  } = _ref19;
+  } = _ref20;
   return /*#__PURE__*/React.createElement("div", {
     className: 'rounded-3xl p-4 bg-gradient-to-br border ' + accent
   }, /*#__PURE__*/React.createElement("div", {
@@ -3153,10 +3268,10 @@ function BigStat(_ref19) {
     className: "text-xl font-black num mt-0.5"
   }, value));
 }
-function ChartEmpty(_ref20) {
+function ChartEmpty(_ref21) {
   let {
     msg
-  } = _ref20;
+  } = _ref21;
   return /*#__PURE__*/React.createElement("div", {
     className: "h-[180px] flex flex-col items-center justify-center text-slate-600"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3167,10 +3282,10 @@ function ChartEmpty(_ref20) {
 }
 
 /* ============================== INFO / SETTINGS ============================== */
-function InfoScreen(_ref21) {
+function InfoScreen(_ref22) {
   let {
     ctx
-  } = _ref21;
+  } = _ref22;
   const {
     data,
     update,
@@ -3249,11 +3364,11 @@ function InfoScreen(_ref21) {
       showToast('ล้างข้อมูลแล้ว');
     }
   };
-  const Toggle = _ref22 => {
+  const Toggle = _ref23 => {
     let {
       on,
       onClick
-    } = _ref22;
+    } = _ref23;
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick,
       className: 'press w-12 h-7 rounded-full transition relative flex-shrink-0 ' + (on ? 'bg-brand' : 'bg-white/15')
@@ -3494,18 +3609,18 @@ function InfoScreen(_ref21) {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.5 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v1.6 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
   }));
 }
-function TireSheet(_ref23) {
+function TireSheet(_ref24) {
   let {
     open,
     onClose,
     ctx
-  } = _ref23;
+  } = _ref24;
   const {
     data,
     update,
@@ -3574,10 +3689,10 @@ function TireSheet(_ref23) {
     onClick: save
   }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")));
 }
-function SyncCard(_ref24) {
+function SyncCard(_ref25) {
   let {
     ctx
-  } = _ref24;
+  } = _ref25;
   const {
     data,
     update,
@@ -3729,12 +3844,12 @@ function SyncCard(_ref24) {
     className: "press w-full py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-400 text-[13px] font-semibold"
   }, "\u0E15\u0E31\u0E14\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D"));
 }
-function RefRow(_ref25) {
+function RefRow(_ref26) {
   let {
     k,
     v,
     last
-  } = _ref25;
+  } = _ref26;
   return /*#__PURE__*/React.createElement("div", {
     className: 'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')
   }, /*#__PURE__*/React.createElement("span", {
@@ -3743,19 +3858,19 @@ function RefRow(_ref25) {
     className: "text-[13px] text-slate-200 text-right font-medium"
   }, v));
 }
-function SectionLabel(_ref26) {
+function SectionLabel(_ref27) {
   let {
     children
-  } = _ref26;
+  } = _ref27;
   return /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"
   }, children);
 }
-function Header(_ref27) {
+function Header(_ref28) {
   let {
     title,
     subtitle
-  } = _ref27;
+  } = _ref28;
   return /*#__PURE__*/React.createElement("div", {
     className: "pt-3 pb-4 sticky top-0 z-20"
   }, /*#__PURE__*/React.createElement("div", {
@@ -3764,12 +3879,12 @@ function Header(_ref27) {
     className: "text-3xl font-extrabold tracking-tight"
   }, title));
 }
-function EmptyState(_ref28) {
+function EmptyState(_ref29) {
   let {
     icon,
     title,
     sub
-  } = _ref28;
+  } = _ref29;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-8 text-center"
   }, /*#__PURE__*/React.createElement("div", {
