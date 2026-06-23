@@ -19,7 +19,13 @@
       theme: {
         extend: {
           colors: {
-            ink: { 950: '#070809', 900: '#0a0b0f', 850: '#0e1016', 800: '#13161f', 700: '#1b1f2b', 600: '#262b3a' },
+            ink: {
+              950: '#070809',
+              900: 'rgb(var(--ink-900) / <alpha-value>)',
+              850: 'rgb(var(--ink-850) / <alpha-value>)',
+              800: 'rgb(var(--ink-800) / <alpha-value>)',
+              700: '#1b1f2b', 600: '#262b3a',
+            },
             brand: { DEFAULT: '#38bdf8', 600: '#0ea5e9', 700: '#0284c7' },
           },
           fontFamily: {
@@ -56,9 +62,36 @@
   </script>
 
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: dark;
+      --ink-900: 10 11 15; --ink-850: 14 16 22; --ink-800: 19 22 31;
+      --page-bg: #070809;
+    }
+    html.light {
+      color-scheme: light;
+      --ink-900: 255 255 255; --ink-850: 243 245 249; --ink-800: 255 255 255;
+      --page-bg: #eef1f6;
+    }
     * { -webkit-tap-highlight-color: transparent; }
-    html, body { background: #070809; overscroll-behavior-y: none; }
+    html, body { background: var(--page-bg); overscroll-behavior-y: none; }
+    .app-bg { background: radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%); }
+    html.light .app-bg { background: radial-gradient(120% 80% at 50% -10%, #dbeafe 0%, #eef1f6 45%, #e9edf4 100%); }
+    /* light-mode overrides for dark-only utility classes */
+    html.light .text-white { color: #0f1521; }
+    html.light .text-slate-200 { color: #1e2633; }
+    html.light .text-slate-300 { color: #334155; }
+    html.light .text-slate-400 { color: #475569; }
+    html.light .text-slate-500 { color: #64748b; }
+    html.light .text-slate-600 { color: #94a3b8; }
+    html.light .bg-white\/10 { background-color: rgba(15,23,42,0.06); }
+    html.light .bg-white\/15 { background-color: rgba(15,23,42,0.10); }
+    html.light .bg-white\/20 { background-color: rgba(15,23,42,0.14); }
+    html.light .bg-white\/\[0\.06\] { background-color: rgba(15,23,42,0.04); }
+    html.light .border-white\/10 { border-color: rgba(15,23,42,0.10); }
+    html.light .border-white\/\[0\.06\] { border-color: rgba(15,23,42,0.08); }
+    html.light .border-white\/\[0\.08\] { border-color: rgba(15,23,42,0.10); }
+    html.light .glass { background: rgba(255,255,255,0.72); }
+    html.light .glass-strong { background: rgba(255,255,255,0.85); }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
@@ -182,8 +215,9 @@
       fuelLogs: [],
       maintenanceLogs: [],
       odoLogs: [],
+      tireLogs: [],
       scheduleState: {},
-      settings: { currency: 'THB', distanceUnit: 'km', warnAheadKm: 300, warnAheadDays: 14, enableThaiItems: true, lastBackup: '', backupIntervalDays: 14 },
+      settings: { currency: 'THB', distanceUnit: 'km', warnAheadKm: 300, warnAheadDays: 14, enableThaiItems: true, lastBackup: '', backupIntervalDays: 14, monthlyBudget: 0, theme: 'dark' },
     };
 
     const TANK_L = 13;        // ความจุถัง (ล.) จากคู่มือ
@@ -242,14 +276,34 @@
       return settings.enableThaiItems ? [...SCHEDULE, ...THAI_ITEMS] : SCHEDULE;
     }
 
-    function computeScheduleStatus(item, data) {
+    // อัตราใช้รถเฉลี่ย (กม./วัน) จากจุดข้อมูลที่มีทั้งวันที่และเลขไมล์
+    function computeUsage(data) {
+      const pts = [];
+      data.fuelLogs.forEach(f => { if (f.date && f.odo > 0) pts.push({ date: f.date, odo: +f.odo }); });
+      data.maintenanceLogs.forEach(m => { if (m.date && m.odo > 0) pts.push({ date: m.date, odo: +m.odo }); });
+      data.odoLogs.forEach(o => { if (o.date && o.odo > 0) pts.push({ date: o.date, odo: +o.odo }); });
+      if (pts.length < 2) return null;
+      pts.sort((a, b) => a.odo - b.odo);
+      const first = pts[0], last = pts[pts.length - 1];
+      const dist = last.odo - first.odo;
+      const days = diffDays(parseDate(last.date), parseDate(first.date));
+      if (dist <= 0 || days <= 0) return null;
+      return { kmPerDay: dist / days, dist, days };
+    }
+
+    function computeScheduleStatus(item, data, usage) {
       const st = data.scheduleState[item.key] || {};
       const odo = data.vehicle.currentOdo || 0;
       const today = new Date(); today.setHours(0, 0, 0, 0);
-      let remKm = null, remDays = null, nextOdo = null, nextDateStr = null;
+      let remKm = null, remDays = null, nextOdo = null, nextDateStr = null, estDateStr = null;
       if (item.km != null && st.lastOdo != null) { nextOdo = st.lastOdo + item.km; remKm = nextOdo - odo; }
       else if (item.km != null) { nextOdo = item.km; remKm = nextOdo - odo; }
       if (item.months != null && st.lastDate) { const nd = addMonths(parseDate(st.lastDate), item.months); nextDateStr = nd.toISOString().slice(0,10); remDays = diffDays(nd, today); }
+      // ทำนายวันครบกำหนดจากอัตราใช้รถ (เฉพาะรายการนับ กม. ที่ยังไม่เลย)
+      if (remKm != null && remKm > 0 && usage && usage.kmPerDay > 0) {
+        const d = new Date(today); d.setDate(d.getDate() + Math.round(remKm / usage.kmPerDay));
+        estDateStr = d.toISOString().slice(0, 10);
+      }
       const warnKm = data.settings.warnAheadKm, warnDays = data.settings.warnAheadDays;
       let level = 'ok'; // ok | warn | overdue | none
       const has = remKm != null || remDays != null;
@@ -257,7 +311,7 @@
       const over = (remKm != null && remKm <= 0) || (remDays != null && remDays <= 0);
       const warn = (remKm != null && remKm <= warnKm) || (remDays != null && remDays <= warnDays);
       if (over) level = 'overdue'; else if (warn) level = 'warn';
-      return { ...item, ...st, remKm, remDays, nextOdo, nextDateStr, level, done: !!(st.lastOdo != null || st.lastDate) };
+      return { ...item, ...st, remKm, remDays, nextOdo, nextDateStr, estDateStr, level, done: !!(st.lastOdo != null || st.lastDate) };
     }
 
     function costPerKm(data) {
@@ -316,6 +370,27 @@
       return lines.join('\r\n');
     }
 
+    // บีบอัดรูปเป็น JPEG base64 ขนาดเล็ก (ประหยัดพื้นที่ localStorage)
+    function compressImage(file, maxDim, quality) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = new Image();
+          img.onload = () => {
+            let w = img.width, h = img.height;
+            const scale = Math.min(1, maxDim / Math.max(w, h));
+            w = Math.round(w * scale); h = Math.round(h * scale);
+            const cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            cv.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = reject; img.src = e.target.result;
+        };
+        reader.onerror = reject; reader.readAsDataURL(file);
+      });
+    }
+
     function downloadFile(content, filename, mime) {
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -362,7 +437,7 @@
       return <input type="text" {...props} className={inputCls + ' text-left'} onChange={e => props.onChange && props.onChange(e.target.value)} value={props.value} />;
     }
     function DateInput(props) {
-      return <input type="date" {...props} className={inputCls} style={{ colorScheme: 'dark' }} onChange={e => props.onChange && props.onChange(e.target.value)} value={props.value} />;
+      return <input type="date" {...props} className={inputCls} onChange={e => props.onChange && props.onChange(e.target.value)} value={props.value} />;
     }
 
     function Sheet({ open, onClose, title, children }) {
@@ -396,6 +471,12 @@
       const [toast, setToast] = useState(null);
 
       useEffect(() => { saveData(data); }, [data]);
+      useEffect(() => {
+        const light = data.settings.theme === 'light';
+        document.documentElement.classList.toggle('light', light);
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', light ? '#eef1f6' : '#0a0b0f');
+      }, [data.settings.theme]);
       const update = useCallback((fn) => setData(d => { const n = structuredClone(d); fn(n); return n; }), []);
       const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); }, []);
 
@@ -418,7 +499,7 @@
       ];
 
       return (
-        <div className="min-h-screen text-white relative" style={{ background: 'radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%)' }}>
+        <div className="app-bg min-h-screen text-white relative">
           <div className="max-w-md mx-auto relative min-h-screen">
             <div className="pb-tabbar">
               {tab === 'home' && <HomeScreen ctx={ctx} go={setTab} />}
@@ -476,14 +557,15 @@
       const backupDays = daysSinceBackup(data.settings);
       const backupDue = backupDays == null ? (data.fuelLogs.length + data.maintenanceLogs.length > 0) : backupDays >= data.settings.backupIntervalDays;
 
+      const usage = useMemo(() => computeUsage(data), [data]);
       const alerts = useMemo(() => activeSchedule(data.settings)
-        .map(it => computeScheduleStatus(it, data))
+        .map(it => computeScheduleStatus(it, data, usage))
         .filter(s => s.level === 'overdue' || s.level === 'warn')
         .sort((a, b) => {
           const order = { overdue: 0, warn: 1 };
           if (order[a.level] !== order[b.level]) return order[a.level] - order[b.level];
           return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
-        }), [data]);
+        }), [data, usage]);
 
       const markDone = (item) => {
         update(d => {
@@ -615,6 +697,7 @@
                           {a.remDays != null && (a.remDays <= 0 ? 'เลย ' + fmt(-a.remDays) + ' วัน' : 'อีก ' + fmt(a.remDays) + ' วัน')}
                           {a.nextOdo != null && <span className="text-slate-500"> · ครบที่ {fmt(a.nextOdo)}</span>}
                         </div>
+                        {a.estDateStr && <div className="text-[12px] text-slate-500 mt-0.5">📅 คาดประมาณ {thDate(a.estDateStr)}</div>}
                       </div>
                     </div>
                     <button onClick={() => setQuickItem(a)} className="press mt-3 w-full py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-sm font-bold text-brand">ทำแล้ว ✓</button>
@@ -747,18 +830,25 @@
     function MaintSheet({ open, onClose, ctx, edit, presetKey }) {
       const { data, update, showToast } = ctx;
       const [m, setM] = useState({});
+      const photoRef = useRef(null);
       const allItems = activeSchedule(data.settings);
       useEffect(() => {
-        if (open) setM(edit ? { ...edit } : { date: todayStr(), odo: String(data.vehicle.currentOdo || ''), itemKey: presetKey || allItems[0].key, cost: '', shop: '', note: '' });
+        if (open) setM(edit ? { ...edit } : { date: todayStr(), odo: String(data.vehicle.currentOdo || ''), itemKey: presetKey || allItems[0].key, cost: '', shop: '', note: '', photo: '' });
       }, [open]);
       const set = (k, v) => setM(p => ({ ...p, [k]: v }));
       const item = allItems.find(i => i.key === m.itemKey);
+      const onPhoto = async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        try { const b64 = await compressImage(file, 1000, 0.6); set('photo', b64); }
+        catch (err) { alert('แนบรูปไม่สำเร็จ'); }
+        e.target.value = '';
+      };
 
       const save = () => {
         const odo = parseFloat(m.odo);
         if (isNaN(odo)) return;
         const it = allItems.find(i => i.key === m.itemKey);
-        const rec = { id: edit ? edit.id : uuid(), date: m.date, odo, itemKey: m.itemKey, title: it ? it.title : (m.title || 'อื่นๆ'), cost: parseFloat(m.cost) || 0, shop: m.shop || '', note: m.note || '' };
+        const rec = { id: edit ? edit.id : uuid(), date: m.date, odo, itemKey: m.itemKey, title: it ? it.title : (m.title || 'อื่นๆ'), cost: parseFloat(m.cost) || 0, shop: m.shop || '', note: m.note || '', photo: m.photo || '' };
         update(d => {
           if (edit) { const i = d.maintenanceLogs.findIndex(x => x.id === edit.id); if (i >= 0) d.maintenanceLogs[i] = rec; }
           else d.maintenanceLogs.push(rec);
@@ -787,6 +877,17 @@
             <Field label="ค่าใช้จ่าย (฿)"><NumInput value={m.cost} onChange={v => set('cost', v)} placeholder="0" /></Field>
             <Field label="ร้าน/ศูนย์"><TextInput value={m.shop} onChange={v => set('shop', v)} placeholder="ศูนย์ Yamaha..." /></Field>
             <Field label="หมายเหตุ"><TextInput value={m.note} onChange={v => set('note', v)} placeholder="เช่น Yamalube 10W-40 + กรอง" /></Field>
+            <Field label="รูปใบเสร็จ/รูปภาพ (ถ้ามี)">
+              <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
+              {m.photo ? (
+                <div className="relative">
+                  <img src={m.photo} alt="แนบรูป" className="w-full max-h-56 object-contain rounded-2xl border border-white/10 bg-ink-900/80" />
+                  <button onClick={() => set('photo', '')} className="press absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center">✕</button>
+                </div>
+              ) : (
+                <GhostBtn onClick={() => photoRef.current.click()} className="w-full text-center">📷 เลือกรูป (บีบอัดอัตโนมัติ)</GhostBtn>
+              )}
+            </Field>
             <PrimaryBtn onClick={save}>{edit ? 'บันทึกการแก้ไข' : 'บันทึก & รีเซ็ตรอบ'}</PrimaryBtn>
           </div>
         </Sheet>
@@ -864,13 +965,23 @@
       const [edit, setEdit] = useState(null);
       const [presetKey, setPresetKey] = useState(null);
       const [quickItem, setQuickItem] = useState(null);
+      const [filter, setFilter] = useState('all'); // all | due | diy | shop
+      const [viewPhoto, setViewPhoto] = useState(null);
 
-      const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)), [data]);
-      const sorted = [...items].sort((a, b) => {
+      const usage = useMemo(() => computeUsage(data), [data]);
+      const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data, usage)), [data, usage]);
+      const sortedAll = [...items].sort((a, b) => {
         const rank = { overdue: 0, warn: 1, ok: 2, none: 3 };
         if (rank[a.level] !== rank[b.level]) return rank[a.level] - rank[b.level];
         return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
       });
+      const sorted = sortedAll.filter(s =>
+        filter === 'all' ? true :
+        filter === 'due' ? (s.level === 'overdue' || s.level === 'warn') :
+        filter === 'diy' ? !s.star :
+        filter === 'shop' ? s.star : true
+      );
+      const dueCount = sortedAll.filter(s => s.level === 'overdue' || s.level === 'warn').length;
       const history = [...data.maintenanceLogs].sort((a, b) => (a.date < b.date ? 1 : (a.date > b.date ? -1 : b.odo - a.odo)));
 
       const markDone = (item) => {
@@ -894,6 +1005,13 @@
 
           {sub === 'schedule' ? (
             <div className="space-y-2.5">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
+                {[['all', 'ทั้งหมด'], ['due', 'ใกล้ถึง' + (dueCount ? ' (' + dueCount + ')' : '')], ['diy', '🔧 ทำเอง'], ['shop', '★ งานศูนย์']].map(([k, l]) => (
+                  <button key={k} onClick={() => setFilter(k)} className={'press flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-bold border transition ' + (filter === k ? 'bg-brand text-ink-950 border-brand' : 'bg-white/[0.06] text-slate-300 border-white/10')}>{l}</button>
+                ))}
+              </div>
+              {usage && <div className="text-[12px] text-slate-500 px-1 num">📊 ใช้รถเฉลี่ย ~{fmt(usage.kmPerDay, 0)} กม./วัน — ใช้ทำนายวันครบกำหนด</div>}
+              {sorted.length === 0 && <EmptyState icon="✨" title="ไม่มีรายการในหมวดนี้" sub="ลองเลือกตัวกรองอื่น" />}
               {sorted.map(s => {
                 const l = LEVEL[s.level];
                 return (
@@ -925,6 +1043,7 @@
                             {s.remDays != null && (s.remDays <= 0 ? 'เลย ' + fmt(-s.remDays) + ' วัน' : 'อีก ' + fmt(s.remDays) + ' วัน')}
                           </div>
                         )}
+                        {s.estDateStr && <div className="text-[12px] text-slate-500 mt-0.5">📅 คาดถึงกำหนดประมาณ {thDate(s.estDateStr)}</div>}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-3">
@@ -954,6 +1073,7 @@
                                 <div className="text-[12px] text-slate-400 mt-1 num">{thDate(h.date)} · ไมล์ {fmt(h.odo)} กม.</div>
                                 {h.shop && <div className="text-[12px] text-slate-500 mt-0.5">🏪 {h.shop}</div>}
                                 {h.note && <div className="text-[12px] text-slate-500 mt-0.5">{h.note}</div>}
+                                {h.photo && <img src={h.photo} onClick={() => setViewPhoto(h.photo)} alt="รูปแนบ" className="press mt-2 h-16 w-16 object-cover rounded-xl border border-white/10 cursor-pointer" />}
                               </div>
                               <div className="text-right flex-shrink-0">
                                 {h.cost > 0 && <div className="font-black num text-emerald-300">{baht(h.cost)}</div>}
@@ -975,6 +1095,13 @@
 
           <MaintSheet open={open} onClose={() => { setOpen(false); setEdit(null); setPresetKey(null); }} ctx={ctx} edit={edit} presetKey={presetKey} />
           <ConfirmDone item={quickItem} onClose={() => setQuickItem(null)} onConfirm={() => { markDone(quickItem); setQuickItem(null); }} odo={data.vehicle.currentOdo} />
+          {viewPhoto && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 anim-fade" onMouseDown={() => setViewPhoto(null)}>
+              <div className="absolute inset-0 bg-black/85"></div>
+              <img src={viewPhoto} alt="รูป" className="relative max-w-full max-h-[88vh] object-contain rounded-2xl anim-pop" />
+              <button onClick={() => setViewPhoto(null)} className="press absolute top-6 right-6 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-lg">✕</button>
+            </div>
+          )}
         </div>
       );
     }
@@ -999,6 +1126,22 @@
       const effData = fuelStats.filter(f => f.kmpl != null).map(f => ({ name: thDate(f.date).slice(0, 6), value: +f.kmpl.toFixed(2) }));
       const priceData = [...data.fuelLogs].filter(f => f.pricePerL > 0).sort((a, b) => (a.date < b.date ? -1 : 1)).map(f => ({ name: thDate(f.date).slice(0, 6), value: +Number(f.pricePerL).toFixed(2) }));
 
+      // ค่าใช้จ่ายแยกหมวด
+      const thaiKeys = new Set(THAI_ITEMS.map(i => i.key));
+      let legalCost = 0, repairCost = 0;
+      data.maintenanceLogs.forEach(m => { (thaiKeys.has(m.itemKey) ? (legalCost += Number(m.cost || 0)) : (repairCost += Number(m.cost || 0))); });
+      const cats = [
+        { name: 'น้ำมัน', amount: totalFuel, color: '#38bdf8' },
+        { name: 'ซ่อมบำรุง/อะไหล่', amount: repairCost, color: '#34d399' },
+        { name: 'ภาษี/พ.ร.บ./ประกัน', amount: legalCost, color: '#a78bfa' },
+      ].filter(c => c.amount > 0);
+      const catTotal = cats.reduce((s, c) => s + c.amount, 0);
+
+      // งบรายเดือน (เดือนปัจจุบัน)
+      const curMonth = todayStr().slice(0, 7);
+      const monthSpend = (monthMap[curMonth] ? monthMap[curMonth].fuel + monthMap[curMonth].maint : 0);
+      const budget = Number(data.settings.monthlyBudget || 0);
+
       return (
         <div className="px-4 pt-safe">
           <Header title="สรุป" subtitle="ภาพรวมค่าใช้จ่าย" />
@@ -1009,6 +1152,44 @@
             <BigStat label="ต้นทุนต่อ กม." value={cpk ? baht(cpk) : '–'} icon="📈" accent="from-cyan-500/15 to-cyan-500/5 border-cyan-500/25" />
             <BigStat label="ระยะทางรวม" value={fmt(dist) + ' กม.'} icon="🛣️" accent="from-violet-500/15 to-violet-500/5 border-violet-500/25" />
           </div>
+
+          {budget > 0 && (
+            <Card className={'p-4 mb-3 ' + (monthSpend > budget ? 'ring-1 ring-rose-500/40' : '')}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-bold">งบเดือนนี้ ({thMonthYear(curMonth + '-01')})</div>
+                {monthSpend > budget && <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold">เกินงบ</span>}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className={'text-2xl font-black num ' + (monthSpend > budget ? 'text-rose-400' : 'text-emerald-300')}>{baht(monthSpend)}</span>
+                <span className="text-[13px] text-slate-500 num">/ {baht(budget)}</span>
+              </div>
+              <div className="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                <div className={'h-full rounded-full ' + (monthSpend > budget ? 'bg-rose-500' : 'bg-gradient-to-r from-brand to-cyan-300')} style={{ width: Math.max(2, Math.min(100, budget ? (monthSpend / budget) * 100 : 0)) + '%' }}></div>
+              </div>
+            </Card>
+          )}
+
+          {cats.length > 0 && (
+            <Card className="p-4 mb-3">
+              <div className="font-bold mb-3">ค่าใช้จ่ายแยกหมวด</div>
+              <div className="space-y-3">
+                {cats.map((c, i) => {
+                  const pct = catTotal ? (c.amount / catTotal) * 100 : 0;
+                  return (
+                    <div key={i}>
+                      <div className="flex justify-between text-[13px] mb-1">
+                        <span className="text-slate-300 font-medium">{c.name}</span>
+                        <span className="num text-slate-400">{baht(c.amount)} · {fmt(pct, 0)}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: Math.max(2, pct) + '%', background: c.color }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           <Card className="p-4 mb-3">
             <div className="font-bold mb-1">ค่าใช้จ่ายรายเดือน</div>
@@ -1177,6 +1358,7 @@
     function InfoScreen({ ctx }) {
       const { data, update, setData, showToast, exportData } = ctx;
       const [veh, setVeh] = useState(data.vehicle);
+      const [tireOpen, setTireOpen] = useState(false);
       const fileRef = useRef(null);
       useEffect(() => { setVeh(data.vehicle); }, [data.vehicle]);
 
@@ -1233,12 +1415,13 @@
           </Card>
 
           {/* Settings */}
-          <SectionLabel>การแจ้งเตือน</SectionLabel>
+          <SectionLabel>การแจ้งเตือน & การแสดงผล</SectionLabel>
           <Card className="p-4 space-y-3 mb-5">
             <div className="grid grid-cols-2 gap-3">
               <Field label="เตือนล่วงหน้า (กม.)"><NumInput value={String(data.settings.warnAheadKm)} onChange={v => update(d => d.settings.warnAheadKm = parseFloat(v) || 0)} /></Field>
               <Field label="เตือนล่วงหน้า (วัน)"><NumInput value={String(data.settings.warnAheadDays)} onChange={v => update(d => d.settings.warnAheadDays = parseFloat(v) || 0)} /></Field>
             </div>
+            <Field label="งบรายเดือน (฿) — 0 = ปิด" hint="แสดงแถบงบ + เตือนเมื่อใช้เกิน ในแท็บสรุป"><NumInput value={String(data.settings.monthlyBudget || '')} onChange={v => update(d => d.settings.monthlyBudget = parseFloat(v) || 0)} placeholder="เช่น 3000" /></Field>
             <div className="flex items-center justify-between pt-1">
               <div>
                 <div className="font-semibold text-[15px]">รายการ พ.ร.บ. / ภาษี / ประกัน</div>
@@ -1246,6 +1429,35 @@
               </div>
               <Toggle on={data.settings.enableThaiItems} onClick={() => update(d => d.settings.enableThaiItems = !d.settings.enableThaiItems)} />
             </div>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <div className="font-semibold text-[15px]">ธีมสว่าง (Light mode)</div>
+                <div className="text-[12px] text-slate-500">สลับเป็นพื้นหลังสว่าง</div>
+              </div>
+              <Toggle on={data.settings.theme === 'light'} onClick={() => update(d => d.settings.theme = d.settings.theme === 'light' ? 'dark' : 'light')} />
+            </div>
+          </Card>
+
+          {/* Tire pressure */}
+          <SectionLabel>ลมยาง</SectionLabel>
+          <Card className="p-4 mb-5">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3">
+                <div className="text-[12px] text-slate-500">เป้าหมาย หน้า</div>
+                <div className="text-xl font-black num text-emerald-300">29 <span className="text-sm text-slate-400 font-semibold">psi</span></div>
+              </div>
+              <div className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3">
+                <div className="text-[12px] text-slate-500">เป้าหมาย หลัง</div>
+                <div className="text-xl font-black num text-emerald-300">33 <span className="text-sm text-slate-400 font-semibold">psi</span></div>
+              </div>
+            </div>
+            {(() => {
+              const last = [...(data.tireLogs || [])].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+              return last ? (
+                <div className="text-[13px] text-slate-400 mb-3 num">วัดล่าสุด {thDate(last.date)}: หน้า <b className="text-slate-200">{last.front}</b> · หลัง <b className="text-slate-200">{last.rear}</b> psi{last.note ? ' · ' + last.note : ''}</div>
+              ) : <div className="text-[13px] text-slate-500 mb-3">ยังไม่เคยบันทึกค่าลมยาง</div>;
+            })()}
+            <GhostBtn onClick={() => setTireOpen(true)} className="w-full text-center">🛞 บันทึกค่าลมยาง</GhostBtn>
           </Card>
 
           {/* Reference data */}
@@ -1314,8 +1526,35 @@
             <button onClick={clearAll} className="press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1">🗑️ ล้างข้อมูลทั้งหมด</button>
           </Card>
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.2 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.3 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+
+          <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
+      );
+    }
+
+    function TireSheet({ open, onClose, ctx }) {
+      const { data, update, showToast } = ctx;
+      const [t, setT] = useState({});
+      useEffect(() => { if (open) setT({ date: todayStr(), odo: String(data.vehicle.currentOdo || ''), front: '29', rear: '33', note: '' }); }, [open]);
+      const set = (k, v) => setT(p => ({ ...p, [k]: v }));
+      const save = () => {
+        update(d => { (d.tireLogs = d.tireLogs || []).push({ id: uuid(), date: t.date, odo: parseFloat(t.odo) || 0, front: parseFloat(t.front) || 0, rear: parseFloat(t.rear) || 0, note: t.note || '' }); });
+        showToast('บันทึกค่าลมยางแล้ว'); onClose();
+      };
+      return (
+        <Sheet open={open} onClose={onClose} title="บันทึกค่าลมยาง">
+          <div className="space-y-4">
+            <div className="text-[12px] text-slate-400 px-1">เป้าหมายตามคู่มือ: หน้า 29 · หลัง 33 psi (วัดขณะยางเย็น)</div>
+            <Field label="วันที่"><DateInput value={t.date} onChange={v => set('date', v)} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="ลมยางหน้า (psi)"><NumInput value={t.front} onChange={v => set('front', v)} /></Field>
+              <Field label="ลมยางหลัง (psi)"><NumInput value={t.rear} onChange={v => set('rear', v)} /></Field>
+            </div>
+            <Field label="หมายเหตุ"><TextInput value={t.note} onChange={v => set('note', v)} placeholder="เช่น เติมที่ปั๊ม" /></Field>
+            <PrimaryBtn onClick={save}>บันทึก</PrimaryBtn>
+          </div>
+        </Sheet>
       );
     }
 

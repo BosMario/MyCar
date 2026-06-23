@@ -103,7 +103,13 @@ Check your Browserslist config to be sure that your targets are set up correctly
       theme: {
         extend: {
           colors: {
-            ink: { 950: '#070809', 900: '#0a0b0f', 850: '#0e1016', 800: '#13161f', 700: '#1b1f2b', 600: '#262b3a' },
+            ink: {
+              950: '#070809',
+              900: 'rgb(var(--ink-900) / <alpha-value>)',
+              850: 'rgb(var(--ink-850) / <alpha-value>)',
+              800: 'rgb(var(--ink-800) / <alpha-value>)',
+              700: '#1b1f2b', 600: '#262b3a',
+            },
             brand: { DEFAULT: '#38bdf8', 600: '#0ea5e9', 700: '#0284c7' },
           },
           fontFamily: {
@@ -437,9 +443,36 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   </script>
 
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: dark;
+      --ink-900: 10 11 15; --ink-850: 14 16 22; --ink-800: 19 22 31;
+      --page-bg: #070809;
+    }
+    html.light {
+      color-scheme: light;
+      --ink-900: 255 255 255; --ink-850: 243 245 249; --ink-800: 255 255 255;
+      --page-bg: #eef1f6;
+    }
     * { -webkit-tap-highlight-color: transparent; }
-    html, body { background: #070809; overscroll-behavior-y: none; }
+    html, body { background: var(--page-bg); overscroll-behavior-y: none; }
+    .app-bg { background: radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%); }
+    html.light .app-bg { background: radial-gradient(120% 80% at 50% -10%, #dbeafe 0%, #eef1f6 45%, #e9edf4 100%); }
+    /* light-mode overrides for dark-only utility classes */
+    html.light .text-white { color: #0f1521; }
+    html.light .text-slate-200 { color: #1e2633; }
+    html.light .text-slate-300 { color: #334155; }
+    html.light .text-slate-400 { color: #475569; }
+    html.light .text-slate-500 { color: #64748b; }
+    html.light .text-slate-600 { color: #94a3b8; }
+    html.light .bg-white\/10 { background-color: rgba(15,23,42,0.06); }
+    html.light .bg-white\/15 { background-color: rgba(15,23,42,0.10); }
+    html.light .bg-white\/20 { background-color: rgba(15,23,42,0.14); }
+    html.light .bg-white\/\[0\.06\] { background-color: rgba(15,23,42,0.04); }
+    html.light .border-white\/10 { border-color: rgba(15,23,42,0.10); }
+    html.light .border-white\/\[0\.06\] { border-color: rgba(15,23,42,0.08); }
+    html.light .border-white\/\[0\.08\] { border-color: rgba(15,23,42,0.10); }
+    html.light .glass { background: rgba(255,255,255,0.72); }
+    html.light .glass-strong { background: rgba(255,255,255,0.85); }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
@@ -797,6 +830,7 @@ const DEFAULT_DATA = {
   fuelLogs: [],
   maintenanceLogs: [],
   odoLogs: [],
+  tireLogs: [],
   scheduleState: {},
   settings: {
     currency: 'THB',
@@ -805,7 +839,9 @@ const DEFAULT_DATA = {
     warnAheadDays: 14,
     enableThaiItems: true,
     lastBackup: '',
-    backupIntervalDays: 14
+    backupIntervalDays: 14,
+    monthlyBudget: 0,
+    theme: 'dark'
   }
 };
 const TANK_L = 13; // ความจุถัง (ล.) จากคู่มือ
@@ -922,7 +958,42 @@ function avgKmpl(fuelStats) {
 function activeSchedule(settings) {
   return settings.enableThaiItems ? [...SCHEDULE, ...THAI_ITEMS] : SCHEDULE;
 }
-function computeScheduleStatus(item, data) {
+
+// อัตราใช้รถเฉลี่ย (กม./วัน) จากจุดข้อมูลที่มีทั้งวันที่และเลขไมล์
+function computeUsage(data) {
+  const pts = [];
+  data.fuelLogs.forEach(f => {
+    if (f.date && f.odo > 0) pts.push({
+      date: f.date,
+      odo: +f.odo
+    });
+  });
+  data.maintenanceLogs.forEach(m => {
+    if (m.date && m.odo > 0) pts.push({
+      date: m.date,
+      odo: +m.odo
+    });
+  });
+  data.odoLogs.forEach(o => {
+    if (o.date && o.odo > 0) pts.push({
+      date: o.date,
+      odo: +o.odo
+    });
+  });
+  if (pts.length < 2) return null;
+  pts.sort((a, b) => a.odo - b.odo);
+  const first = pts[0],
+    last = pts[pts.length - 1];
+  const dist = last.odo - first.odo;
+  const days = diffDays(parseDate(last.date), parseDate(first.date));
+  if (dist <= 0 || days <= 0) return null;
+  return {
+    kmPerDay: dist / days,
+    dist,
+    days
+  };
+}
+function computeScheduleStatus(item, data, usage) {
   const st = data.scheduleState[item.key] || {};
   const odo = data.vehicle.currentOdo || 0;
   const today = new Date();
@@ -930,7 +1001,8 @@ function computeScheduleStatus(item, data) {
   let remKm = null,
     remDays = null,
     nextOdo = null,
-    nextDateStr = null;
+    nextDateStr = null,
+    estDateStr = null;
   if (item.km != null && st.lastOdo != null) {
     nextOdo = st.lastOdo + item.km;
     remKm = nextOdo - odo;
@@ -942,6 +1014,12 @@ function computeScheduleStatus(item, data) {
     const nd = addMonths(parseDate(st.lastDate), item.months);
     nextDateStr = nd.toISOString().slice(0, 10);
     remDays = diffDays(nd, today);
+  }
+  // ทำนายวันครบกำหนดจากอัตราใช้รถ (เฉพาะรายการนับ กม. ที่ยังไม่เลย)
+  if (remKm != null && remKm > 0 && usage && usage.kmPerDay > 0) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + Math.round(remKm / usage.kmPerDay));
+    estDateStr = d.toISOString().slice(0, 10);
   }
   const warnKm = data.settings.warnAheadKm,
     warnDays = data.settings.warnAheadDays;
@@ -958,6 +1036,7 @@ function computeScheduleStatus(item, data) {
     remDays,
     nextOdo,
     nextDateStr,
+    estDateStr,
     level,
     done: !!(st.lastOdo != null || st.lastDate)
   };
@@ -1028,6 +1107,32 @@ function buildICS(events) {
   });
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
+}
+
+// บีบอัดรูปเป็น JPEG base64 ขนาดเล็ก (ประหยัดพื้นที่ localStorage)
+function compressImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width,
+          h = img.height;
+        const scale = Math.min(1, maxDim / Math.max(w, h));
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+        const cv = document.createElement('canvas');
+        cv.width = w;
+        cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 function downloadFile(content, filename, mime) {
   const blob = new Blob([content], {
@@ -1137,9 +1242,6 @@ function DateInput(props) {
     type: "date"
   }, props, {
     className: inputCls,
-    style: {
-      colorScheme: 'dark'
-    },
     onChange: e => props.onChange && props.onChange(e.target.value),
     value: props.value
   }));
@@ -1208,6 +1310,12 @@ function App() {
   useEffect(() => {
     saveData(data);
   }, [data]);
+  useEffect(() => {
+    const light = data.settings.theme === 'light';
+    document.documentElement.classList.toggle('light', light);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', light ? '#eef1f6' : '#0a0b0f');
+  }, [data.settings.theme]);
   const update = useCallback(fn => setData(d => {
     const n = structuredClone(d);
     fn(n);
@@ -1259,10 +1367,7 @@ function App() {
     label: 'ข้อมูลรถ'
   }];
   return /*#__PURE__*/React.createElement("div", {
-    className: "min-h-screen text-white relative",
-    style: {
-      background: 'radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%)'
-    }
+    className: "app-bg min-h-screen text-white relative"
   }, /*#__PURE__*/React.createElement("div", {
     className: "max-w-md mx-auto relative min-h-screen"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1330,14 +1435,15 @@ function HomeScreen(_ref7) {
   const fuelEst = useMemo(() => estimateFuel(data, fuelStats), [data, fuelStats]);
   const backupDays = daysSinceBackup(data.settings);
   const backupDue = backupDays == null ? data.fuelLogs.length + data.maintenanceLogs.length > 0 : backupDays >= data.settings.backupIntervalDays;
-  const alerts = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)).filter(s => s.level === 'overdue' || s.level === 'warn').sort((a, b) => {
+  const usage = useMemo(() => computeUsage(data), [data]);
+  const alerts = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data, usage)).filter(s => s.level === 'overdue' || s.level === 'warn').sort((a, b) => {
     const order = {
       overdue: 0,
       warn: 1
     };
     if (order[a.level] !== order[b.level]) return order[a.level] - order[b.level];
     return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
-  }), [data]);
+  }), [data, usage]);
   const markDone = item => {
     update(d => {
       d.scheduleState[item.key] = {
@@ -1511,7 +1617,9 @@ function HomeScreen(_ref7) {
       className: 'text-[13px] mt-1 font-medium ' + l.text
     }, a.remKm != null && (a.remKm <= 0 ? 'เลย ' + fmt(-a.remKm) + ' กม.' : 'อีก ' + fmt(a.remKm) + ' กม.'), a.remKm != null && a.remDays != null && ' · ', a.remDays != null && (a.remDays <= 0 ? 'เลย ' + fmt(-a.remDays) + ' วัน' : 'อีก ' + fmt(a.remDays) + ' วัน'), a.nextOdo != null && /*#__PURE__*/React.createElement("span", {
       className: "text-slate-500"
-    }, " \xB7 \u0E04\u0E23\u0E1A\u0E17\u0E35\u0E48 ", fmt(a.nextOdo))))), /*#__PURE__*/React.createElement("button", {
+    }, " \xB7 \u0E04\u0E23\u0E1A\u0E17\u0E35\u0E48 ", fmt(a.nextOdo))), a.estDateStr && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] text-slate-500 mt-0.5"
+    }, "\uD83D\uDCC5 \u0E04\u0E32\u0E14\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ", thDate(a.estDateStr)))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setQuickItem(a),
       className: "press mt-3 w-full py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-sm font-bold text-brand"
     }, "\u0E17\u0E33\u0E41\u0E25\u0E49\u0E27 \u2713"));
@@ -1819,6 +1927,7 @@ function MaintSheet(_ref10) {
     showToast
   } = ctx;
   const [m, setM] = useState({});
+  const photoRef = useRef(null);
   const allItems = activeSchedule(data.settings);
   useEffect(() => {
     if (open) setM(edit ? {
@@ -1829,7 +1938,8 @@ function MaintSheet(_ref10) {
       itemKey: presetKey || allItems[0].key,
       cost: '',
       shop: '',
-      note: ''
+      note: '',
+      photo: ''
     });
   }, [open]);
   const set = (k, v) => setM(p => ({
@@ -1837,6 +1947,17 @@ function MaintSheet(_ref10) {
     [k]: v
   }));
   const item = allItems.find(i => i.key === m.itemKey);
+  const onPhoto = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const b64 = await compressImage(file, 1000, 0.6);
+      set('photo', b64);
+    } catch (err) {
+      alert('แนบรูปไม่สำเร็จ');
+    }
+    e.target.value = '';
+  };
   const save = () => {
     const odo = parseFloat(m.odo);
     if (isNaN(odo)) return;
@@ -1849,7 +1970,8 @@ function MaintSheet(_ref10) {
       title: it ? it.title : m.title || 'อื่นๆ',
       cost: parseFloat(m.cost) || 0,
       shop: m.shop || '',
-      note: m.note || ''
+      note: m.note || '',
+      photo: m.photo || ''
     };
     update(d => {
       if (edit) {
@@ -1916,7 +2038,27 @@ function MaintSheet(_ref10) {
     value: m.note,
     onChange: v => set('note', v),
     placeholder: "\u0E40\u0E0A\u0E48\u0E19 Yamalube 10W-40 + \u0E01\u0E23\u0E2D\u0E07"
-  })), /*#__PURE__*/React.createElement(PrimaryBtn, {
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08/\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E (\u0E16\u0E49\u0E32\u0E21\u0E35)"
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: photoRef,
+    type: "file",
+    accept: "image/*",
+    className: "hidden",
+    onChange: onPhoto
+  }), m.photo ? /*#__PURE__*/React.createElement("div", {
+    className: "relative"
+  }, /*#__PURE__*/React.createElement("img", {
+    src: m.photo,
+    alt: "\u0E41\u0E19\u0E1A\u0E23\u0E39\u0E1B",
+    className: "w-full max-h-56 object-contain rounded-2xl border border-white/10 bg-ink-900/80"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => set('photo', ''),
+    className: "press absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center"
+  }, "\u2715")) : /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: () => photoRef.current.click(),
+    className: "w-full text-center"
+  }, "\uD83D\uDCF7 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B (\u0E1A\u0E35\u0E1A\u0E2D\u0E31\u0E14\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34)")), /*#__PURE__*/React.createElement(PrimaryBtn, {
     onClick: save
   }, edit ? 'บันทึกการแก้ไข' : 'บันทึก & รีเซ็ตรอบ')));
 }
@@ -2041,8 +2183,11 @@ function MaintScreen(_ref12) {
   const [edit, setEdit] = useState(null);
   const [presetKey, setPresetKey] = useState(null);
   const [quickItem, setQuickItem] = useState(null);
-  const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)), [data]);
-  const sorted = [...items].sort((a, b) => {
+  const [filter, setFilter] = useState('all'); // all | due | diy | shop
+  const [viewPhoto, setViewPhoto] = useState(null);
+  const usage = useMemo(() => computeUsage(data), [data]);
+  const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data, usage)), [data, usage]);
+  const sortedAll = [...items].sort((a, b) => {
     const rank = {
       overdue: 0,
       warn: 1,
@@ -2052,6 +2197,8 @@ function MaintScreen(_ref12) {
     if (rank[a.level] !== rank[b.level]) return rank[a.level] - rank[b.level];
     return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
   });
+  const sorted = sortedAll.filter(s => filter === 'all' ? true : filter === 'due' ? s.level === 'overdue' || s.level === 'warn' : filter === 'diy' ? !s.star : filter === 'shop' ? s.star : true);
+  const dueCount = sortedAll.filter(s => s.level === 'overdue' || s.level === 'warn').length;
   const history = [...data.maintenanceLogs].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : b.odo - a.odo);
   const markDone = item => {
     update(d => {
@@ -2093,7 +2240,22 @@ function MaintScreen(_ref12) {
     }, l);
   })), sub === 'schedule' ? /*#__PURE__*/React.createElement("div", {
     className: "space-y-2.5"
-  }, sorted.map(s => {
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1"
+  }, [['all', 'ทั้งหมด'], ['due', 'ใกล้ถึง' + (dueCount ? ' (' + dueCount + ')' : '')], ['diy', '🔧 ทำเอง'], ['shop', '★ งานศูนย์']].map(_ref14 => {
+    let [k, l] = _ref14;
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      onClick: () => setFilter(k),
+      className: 'press flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-bold border transition ' + (filter === k ? 'bg-brand text-ink-950 border-brand' : 'bg-white/[0.06] text-slate-300 border-white/10')
+    }, l);
+  })), usage && /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 px-1 num"
+  }, "\uD83D\uDCCA \u0E43\u0E0A\u0E49\u0E23\u0E16\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22 ~", fmt(usage.kmPerDay, 0), " \u0E01\u0E21./\u0E27\u0E31\u0E19 \u2014 \u0E43\u0E0A\u0E49\u0E17\u0E33\u0E19\u0E32\u0E22\u0E27\u0E31\u0E19\u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14"), sorted.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "\u2728",
+    title: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14\u0E19\u0E35\u0E49",
+    sub: "\u0E25\u0E2D\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E15\u0E31\u0E27\u0E01\u0E23\u0E2D\u0E07\u0E2D\u0E37\u0E48\u0E19"
+  }), sorted.map(s => {
     const l = LEVEL[s.level];
     return /*#__PURE__*/React.createElement(Card, {
       key: s.key,
@@ -2128,7 +2290,9 @@ function MaintScreen(_ref12) {
       className: "text-slate-600"
     }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E04\u0E22\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")), (s.remKm != null || s.remDays != null) && /*#__PURE__*/React.createElement("div", {
       className: 'text-[13px] mt-1 font-semibold ' + l.text
-    }, s.remKm != null && (s.remKm <= 0 ? 'เลย ' + fmt(-s.remKm) + ' กม.' : 'อีก ' + fmt(s.remKm) + ' กม.'), s.remKm != null && s.remDays != null && ' · ', s.remDays != null && (s.remDays <= 0 ? 'เลย ' + fmt(-s.remDays) + ' วัน' : 'อีก ' + fmt(s.remDays) + ' วัน')))), /*#__PURE__*/React.createElement("div", {
+    }, s.remKm != null && (s.remKm <= 0 ? 'เลย ' + fmt(-s.remKm) + ' กม.' : 'อีก ' + fmt(s.remKm) + ' กม.'), s.remKm != null && s.remDays != null && ' · ', s.remDays != null && (s.remDays <= 0 ? 'เลย ' + fmt(-s.remDays) + ' วัน' : 'อีก ' + fmt(s.remDays) + ' วัน')), s.estDateStr && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] text-slate-500 mt-0.5"
+    }, "\uD83D\uDCC5 \u0E04\u0E32\u0E14\u0E16\u0E36\u0E07\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ", thDate(s.estDateStr)))), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2 mt-3"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setQuickItem(s),
@@ -2179,7 +2343,12 @@ function MaintScreen(_ref12) {
       className: "text-[12px] text-slate-500 mt-0.5"
     }, "\uD83C\uDFEA ", h.shop), h.note && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] text-slate-500 mt-0.5"
-    }, h.note)), /*#__PURE__*/React.createElement("div", {
+    }, h.note), h.photo && /*#__PURE__*/React.createElement("img", {
+      src: h.photo,
+      onClick: () => setViewPhoto(h.photo),
+      alt: "\u0E23\u0E39\u0E1B\u0E41\u0E19\u0E1A",
+      className: "press mt-2 h-16 w-16 object-cover rounded-xl border border-white/10 cursor-pointer"
+    })), /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-shrink-0"
     }, h.cost > 0 && /*#__PURE__*/React.createElement("div", {
       className: "font-black num text-emerald-300"
@@ -2214,14 +2383,26 @@ function MaintScreen(_ref12) {
       setQuickItem(null);
     },
     odo: data.vehicle.currentOdo
-  }));
+  }), viewPhoto && /*#__PURE__*/React.createElement("div", {
+    className: "fixed inset-0 z-[60] flex items-center justify-center p-4 anim-fade",
+    onMouseDown: () => setViewPhoto(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "absolute inset-0 bg-black/85"
+  }), /*#__PURE__*/React.createElement("img", {
+    src: viewPhoto,
+    alt: "\u0E23\u0E39\u0E1B",
+    className: "relative max-w-full max-h-[88vh] object-contain rounded-2xl anim-pop"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setViewPhoto(null),
+    className: "press absolute top-6 right-6 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-lg"
+  }, "\u2715")));
 }
 
 /* ============================== REPORT SCREEN ============================== */
-function ReportScreen(_ref14) {
+function ReportScreen(_ref15) {
   let {
     ctx
-  } = _ref14;
+  } = _ref15;
   const {
     data
   } = ctx;
@@ -2263,6 +2444,33 @@ function ReportScreen(_ref14) {
     name: thDate(f.date).slice(0, 6),
     value: +Number(f.pricePerL).toFixed(2)
   }));
+
+  // ค่าใช้จ่ายแยกหมวด
+  const thaiKeys = new Set(THAI_ITEMS.map(i => i.key));
+  let legalCost = 0,
+    repairCost = 0;
+  data.maintenanceLogs.forEach(m => {
+    thaiKeys.has(m.itemKey) ? legalCost += Number(m.cost || 0) : repairCost += Number(m.cost || 0);
+  });
+  const cats = [{
+    name: 'น้ำมัน',
+    amount: totalFuel,
+    color: '#38bdf8'
+  }, {
+    name: 'ซ่อมบำรุง/อะไหล่',
+    amount: repairCost,
+    color: '#34d399'
+  }, {
+    name: 'ภาษี/พ.ร.บ./ประกัน',
+    amount: legalCost,
+    color: '#a78bfa'
+  }].filter(c => c.amount > 0);
+  const catTotal = cats.reduce((s, c) => s + c.amount, 0);
+
+  // งบรายเดือน (เดือนปัจจุบัน)
+  const curMonth = todayStr().slice(0, 7);
+  const monthSpend = monthMap[curMonth] ? monthMap[curMonth].fuel + monthMap[curMonth].maint : 0;
+  const budget = Number(data.settings.monthlyBudget || 0);
   return /*#__PURE__*/React.createElement("div", {
     className: "px-4 pt-safe"
   }, /*#__PURE__*/React.createElement(Header, {
@@ -2290,7 +2498,53 @@ function ReportScreen(_ref14) {
     value: fmt(dist) + ' กม.',
     icon: "\uD83D\uDEE3\uFE0F",
     accent: "from-violet-500/15 to-violet-500/5 border-violet-500/25"
-  })), /*#__PURE__*/React.createElement(Card, {
+  })), budget > 0 && /*#__PURE__*/React.createElement(Card, {
+    className: 'p-4 mb-3 ' + (monthSpend > budget ? 'ring-1 ring-rose-500/40' : '')
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold"
+  }, "\u0E07\u0E1A\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 (", thMonthYear(curMonth + '-01'), ")"), monthSpend > budget && /*#__PURE__*/React.createElement("span", {
+    className: "text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold"
+  }, "\u0E40\u0E01\u0E34\u0E19\u0E07\u0E1A")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline justify-between"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: 'text-2xl font-black num ' + (monthSpend > budget ? 'text-rose-400' : 'text-emerald-300')
+  }, baht(monthSpend)), /*#__PURE__*/React.createElement("span", {
+    className: "text-[13px] text-slate-500 num"
+  }, "/ ", baht(budget))), /*#__PURE__*/React.createElement("div", {
+    className: "mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: 'h-full rounded-full ' + (monthSpend > budget ? 'bg-rose-500' : 'bg-gradient-to-r from-brand to-cyan-300'),
+    style: {
+      width: Math.max(2, Math.min(100, budget ? monthSpend / budget * 100 : 0)) + '%'
+    }
+  }))), cats.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-3"
+  }, "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E41\u0E22\u0E01\u0E2B\u0E21\u0E27\u0E14"), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-3"
+  }, cats.map((c, i) => {
+    const pct = catTotal ? c.amount / catTotal * 100 : 0;
+    return /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex justify-between text-[13px] mb-1"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "text-slate-300 font-medium"
+    }, c.name), /*#__PURE__*/React.createElement("span", {
+      className: "num text-slate-400"
+    }, baht(c.amount), " \xB7 ", fmt(pct, 0), "%")), /*#__PURE__*/React.createElement("div", {
+      className: "h-2 rounded-full bg-white/10 overflow-hidden"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "h-full rounded-full",
+      style: {
+        width: Math.max(2, pct) + '%',
+        background: c.color
+      }
+    })));
+  }))), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-1"
@@ -2332,11 +2586,11 @@ function ReportScreen(_ref14) {
     fuelStats: fuelStats
   }));
 }
-function TripCalc(_ref15) {
+function TripCalc(_ref16) {
   let {
     data,
     fuelStats
-  } = _ref15;
+  } = _ref16;
   const [dist, setDist] = useState('');
   const avg = avgKmpl(fuelStats);
   const lastFuel = [...data.fuelLogs].sort((a, b) => a.date < b.date ? 1 : -1)[0];
@@ -2387,10 +2641,10 @@ function TripCalc(_ref15) {
 }
 
 /* ---- Custom SVG charts (offline, no deps) ---- */
-function BarChart(_ref16) {
+function BarChart(_ref17) {
   let {
     data
-  } = _ref16;
+  } = _ref17;
   const W = 320,
     H = 200,
     padL = 34,
@@ -2458,11 +2712,11 @@ function BarChart(_ref16) {
     }, d.name));
   }));
 }
-function LineChart(_ref17) {
+function LineChart(_ref18) {
   let {
     data,
     color = '#38bdf8'
-  } = _ref17;
+  } = _ref18;
   const W = 320,
     H = 190,
     padL = 34,
@@ -2561,13 +2815,13 @@ function niceCeil(v) {
 function kFmt(v) {
   return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
 }
-function BigStat(_ref18) {
+function BigStat(_ref19) {
   let {
     label,
     value,
     icon,
     accent
-  } = _ref18;
+  } = _ref19;
   return /*#__PURE__*/React.createElement("div", {
     className: 'rounded-3xl p-4 bg-gradient-to-br border ' + accent
   }, /*#__PURE__*/React.createElement("div", {
@@ -2578,10 +2832,10 @@ function BigStat(_ref18) {
     className: "text-xl font-black num mt-0.5"
   }, value));
 }
-function ChartEmpty(_ref19) {
+function ChartEmpty(_ref20) {
   let {
     msg
-  } = _ref19;
+  } = _ref20;
   return /*#__PURE__*/React.createElement("div", {
     className: "h-[180px] flex flex-col items-center justify-center text-slate-600"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2592,10 +2846,10 @@ function ChartEmpty(_ref19) {
 }
 
 /* ============================== INFO / SETTINGS ============================== */
-function InfoScreen(_ref20) {
+function InfoScreen(_ref21) {
   let {
     ctx
-  } = _ref20;
+  } = _ref21;
   const {
     data,
     update,
@@ -2604,6 +2858,7 @@ function InfoScreen(_ref20) {
     exportData
   } = ctx;
   const [veh, setVeh] = useState(data.vehicle);
+  const [tireOpen, setTireOpen] = useState(false);
   const fileRef = useRef(null);
   useEffect(() => {
     setVeh(data.vehicle);
@@ -2673,11 +2928,11 @@ function InfoScreen(_ref20) {
       showToast('ล้างข้อมูลแล้ว');
     }
   };
-  const Toggle = _ref21 => {
+  const Toggle = _ref22 => {
     let {
       on,
       onClick
-    } = _ref21;
+    } = _ref22;
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick,
       className: 'press w-12 h-7 rounded-full transition relative flex-shrink-0 ' + (on ? 'bg-brand' : 'bg-white/15')
@@ -2730,7 +2985,7 @@ function InfoScreen(_ref20) {
     onChange: v => setV('registerDate', v)
   })), /*#__PURE__*/React.createElement(PrimaryBtn, {
     onClick: saveVeh
-  }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E16")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19"), /*#__PURE__*/React.createElement(Card, {
+  }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E16")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 & \u0E01\u0E32\u0E23\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25"), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 space-y-3 mb-5"
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3"
@@ -2744,7 +2999,14 @@ function InfoScreen(_ref20) {
   }, /*#__PURE__*/React.createElement(NumInput, {
     value: String(data.settings.warnAheadDays),
     onChange: v => update(d => d.settings.warnAheadDays = parseFloat(v) || 0)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E07\u0E1A\u0E23\u0E32\u0E22\u0E40\u0E14\u0E37\u0E2D\u0E19 (\u0E3F) \u2014 0 = \u0E1B\u0E34\u0E14",
+    hint: "\u0E41\u0E2A\u0E14\u0E07\u0E41\u0E16\u0E1A\u0E07\u0E1A + \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E43\u0E0A\u0E49\u0E40\u0E01\u0E34\u0E19 \u0E43\u0E19\u0E41\u0E17\u0E47\u0E1A\u0E2A\u0E23\u0E38\u0E1B"
+  }, /*#__PURE__*/React.createElement(NumInput, {
+    value: String(data.settings.monthlyBudget || ''),
+    onChange: v => update(d => d.settings.monthlyBudget = parseFloat(v) || 0),
+    placeholder: "\u0E40\u0E0A\u0E48\u0E19 3000"
+  })), /*#__PURE__*/React.createElement("div", {
     className: "flex items-center justify-between pt-1"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "font-semibold text-[15px]"
@@ -2753,7 +3015,50 @@ function InfoScreen(_ref20) {
   }, "\u0E41\u0E2A\u0E14\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E15\u0E48\u0E2D\u0E2D\u0E32\u0E22\u0E38\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E1B\u0E35")), /*#__PURE__*/React.createElement(Toggle, {
     on: data.settings.enableThaiItems,
     onClick: () => update(d => d.settings.enableThaiItems = !d.settings.enableThaiItems)
-  }))), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D)"), /*#__PURE__*/React.createElement(Card, {
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between pt-1"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "font-semibold text-[15px]"
+  }, "\u0E18\u0E35\u0E21\u0E2A\u0E27\u0E48\u0E32\u0E07 (Light mode)"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500"
+  }, "\u0E2A\u0E25\u0E31\u0E1A\u0E40\u0E1B\u0E47\u0E19\u0E1E\u0E37\u0E49\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E27\u0E48\u0E32\u0E07")), /*#__PURE__*/React.createElement(Toggle, {
+    on: data.settings.theme === 'light',
+    onClick: () => update(d => d.settings.theme = d.settings.theme === 'light' ? 'dark' : 'light')
+  }))), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E25\u0E21\u0E22\u0E32\u0E07"), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500"
+  }, "\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 \u0E2B\u0E19\u0E49\u0E32"), /*#__PURE__*/React.createElement("div", {
+    className: "text-xl font-black num text-emerald-300"
+  }, "29 ", /*#__PURE__*/React.createElement("span", {
+    className: "text-sm text-slate-400 font-semibold"
+  }, "psi"))), /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500"
+  }, "\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22 \u0E2B\u0E25\u0E31\u0E07"), /*#__PURE__*/React.createElement("div", {
+    className: "text-xl font-black num text-emerald-300"
+  }, "33 ", /*#__PURE__*/React.createElement("span", {
+    className: "text-sm text-slate-400 font-semibold"
+  }, "psi")))), (() => {
+    const last = [...(data.tireLogs || [])].sort((a, b) => a.date < b.date ? 1 : -1)[0];
+    return last ? /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] text-slate-400 mb-3 num"
+    }, "\u0E27\u0E31\u0E14\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14 ", thDate(last.date), ": \u0E2B\u0E19\u0E49\u0E32 ", /*#__PURE__*/React.createElement("b", {
+      className: "text-slate-200"
+    }, last.front), " \xB7 \u0E2B\u0E25\u0E31\u0E07 ", /*#__PURE__*/React.createElement("b", {
+      className: "text-slate-200"
+    }, last.rear), " psi", last.note ? ' · ' + last.note : '') : /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] text-slate-500 mb-3"
+    }, "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E04\u0E22\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E25\u0E21\u0E22\u0E32\u0E07");
+  })(), /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: () => setTireOpen(true),
+    className: "w-full text-center"
+  }, "\uD83D\uDEDE \u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E25\u0E21\u0E22\u0E32\u0E07")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 (\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D)"), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-2 flex items-center gap-2"
@@ -2866,14 +3171,92 @@ function InfoScreen(_ref20) {
     className: "press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1"
   }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.2 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"));
+  }, "XMAX Logbook \xB7 v1.3 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+    open: tireOpen,
+    onClose: () => setTireOpen(false),
+    ctx: ctx
+  }));
 }
-function RefRow(_ref22) {
+function TireSheet(_ref23) {
+  let {
+    open,
+    onClose,
+    ctx
+  } = _ref23;
+  const {
+    data,
+    update,
+    showToast
+  } = ctx;
+  const [t, setT] = useState({});
+  useEffect(() => {
+    if (open) setT({
+      date: todayStr(),
+      odo: String(data.vehicle.currentOdo || ''),
+      front: '29',
+      rear: '33',
+      note: ''
+    });
+  }, [open]);
+  const set = (k, v) => setT(p => ({
+    ...p,
+    [k]: v
+  }));
+  const save = () => {
+    update(d => {
+      (d.tireLogs = d.tireLogs || []).push({
+        id: uuid(),
+        date: t.date,
+        odo: parseFloat(t.odo) || 0,
+        front: parseFloat(t.front) || 0,
+        rear: parseFloat(t.rear) || 0,
+        note: t.note || ''
+      });
+    });
+    showToast('บันทึกค่าลมยางแล้ว');
+    onClose();
+  };
+  return /*#__PURE__*/React.createElement(Sheet, {
+    open: open,
+    onClose: onClose,
+    title: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E25\u0E21\u0E22\u0E32\u0E07"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "space-y-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400 px-1"
+  }, "\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22\u0E15\u0E32\u0E21\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D: \u0E2B\u0E19\u0E49\u0E32 29 \xB7 \u0E2B\u0E25\u0E31\u0E07 33 psi (\u0E27\u0E31\u0E14\u0E02\u0E13\u0E30\u0E22\u0E32\u0E07\u0E40\u0E22\u0E47\u0E19)"), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48"
+  }, /*#__PURE__*/React.createElement(DateInput, {
+    value: t.date,
+    onChange: v => set('date', v)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E25\u0E21\u0E22\u0E32\u0E07\u0E2B\u0E19\u0E49\u0E32 (psi)"
+  }, /*#__PURE__*/React.createElement(NumInput, {
+    value: t.front,
+    onChange: v => set('front', v)
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E25\u0E21\u0E22\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E07 (psi)"
+  }, /*#__PURE__*/React.createElement(NumInput, {
+    value: t.rear,
+    onChange: v => set('rear', v)
+  }))), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38"
+  }, /*#__PURE__*/React.createElement(TextInput, {
+    value: t.note,
+    onChange: v => set('note', v),
+    placeholder: "\u0E40\u0E0A\u0E48\u0E19 \u0E40\u0E15\u0E34\u0E21\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E4A\u0E21"
+  })), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: save
+  }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")));
+}
+function RefRow(_ref24) {
   let {
     k,
     v,
     last
-  } = _ref22;
+  } = _ref24;
   return /*#__PURE__*/React.createElement("div", {
     className: 'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')
   }, /*#__PURE__*/React.createElement("span", {
@@ -2882,19 +3265,19 @@ function RefRow(_ref22) {
     className: "text-[13px] text-slate-200 text-right font-medium"
   }, v));
 }
-function SectionLabel(_ref23) {
+function SectionLabel(_ref25) {
   let {
     children
-  } = _ref23;
+  } = _ref25;
   return /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"
   }, children);
 }
-function Header(_ref24) {
+function Header(_ref26) {
   let {
     title,
     subtitle
-  } = _ref24;
+  } = _ref26;
   return /*#__PURE__*/React.createElement("div", {
     className: "pt-3 pb-4 sticky top-0 z-20"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2903,12 +3286,12 @@ function Header(_ref24) {
     className: "text-3xl font-extrabold tracking-tight"
   }, title));
 }
-function EmptyState(_ref25) {
+function EmptyState(_ref27) {
   let {
     icon,
     title,
     sub
-  } = _ref25;
+  } = _ref27;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-8 text-center"
   }, /*#__PURE__*/React.createElement("div", {
