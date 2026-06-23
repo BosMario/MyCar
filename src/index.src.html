@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="XMAX" />
+  <meta name="theme-color" content="#0a0b0f" />
+  <title>XMAX Logbook</title>
+
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230a0b0f'/%3E%3Ctext x='50%25' y='54%25' font-size='84' font-family='Arial' font-weight='900' fill='%2338bdf8' text-anchor='middle' dominant-baseline='middle'%3EX%3C/text%3E%3C/svg%3E" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            ink: { 950: '#070809', 900: '#0a0b0f', 850: '#0e1016', 800: '#13161f', 700: '#1b1f2b', 600: '#262b3a' },
+            brand: { DEFAULT: '#38bdf8', 600: '#0ea5e9', 700: '#0284c7' },
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+  <script>
+    // Visible error overlay for debugging on device (no devtools)
+    window.__xmaxErr = function (msg) {
+      var el = document.getElementById('errbox');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'errbox';
+        el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#1a0a0a;color:#fca5a5;font:13px/1.5 -apple-system,monospace;padding:24px;overflow:auto;white-space:pre-wrap;';
+        document.body.appendChild(el);
+        el.textContent = '⚠️ เกิดข้อผิดพลาด (ส่งข้อความนี้ให้ผู้พัฒนา):\n\n';
+      }
+      el.textContent += msg + '\n\n';
+    };
+    window.addEventListener('error', function (e) {
+      window.__xmaxErr((e.message || 'error') + (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      window.__xmaxErr('Promise: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+    });
+  </script>
+
+  <style>
+    :root { color-scheme: dark; }
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body { background: #070809; overscroll-behavior-y: none; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .safe-t { padding-top: env(safe-area-inset-top); }
+    .safe-b { padding-bottom: env(safe-area-inset-bottom); }
+    .pt-safe { padding-top: calc(env(safe-area-inset-top) + 0.5rem); }
+    .pb-tabbar { padding-bottom: calc(env(safe-area-inset-bottom) + 5.5rem); }
+    .tabbar-h { padding-bottom: calc(env(safe-area-inset-bottom) + 0.4rem); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input, select, textarea, button { font-family: inherit; }
+    input:focus, select:focus, textarea:focus { outline: none; }
+    .glass { background: rgba(20,23,32,0.72); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); }
+    .glass-strong { background: rgba(10,11,15,0.86); backdrop-filter: blur(28px) saturate(160%); -webkit-backdrop-filter: blur(28px) saturate(160%); }
+    @keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes popIn { from { opacity:0; transform: scale(.96) translateY(8px);} to {opacity:1; transform: scale(1) translateY(0);} }
+    .anim-sheet { animation: sheetIn .32s cubic-bezier(.16,1,.3,1); }
+    .anim-fade { animation: fadeIn .2s ease-out; }
+    .anim-pop { animation: popIn .3s cubic-bezier(.16,1,.3,1) both; }
+    .press { transition: transform .12s ease, opacity .12s ease; }
+    .press:active { transform: scale(.96); opacity: .85; }
+    .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+    .ring-glow { box-shadow: 0 0 0 1px rgba(56,189,248,.25), 0 8px 40px -12px rgba(56,189,248,.45); }
+  </style>
+</head>
+<body class="dark">
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react,env">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    /* ============================== CONSTANTS / SEED ============================== */
+    const STORAGE_KEY = 'xmax_logbook_v1';
+
+    const REF = {
+      vehicle: {
+        model: 'Yamaha XMAX 300', code: 'CZD300-A (B5X)',
+        engine: '292 cc · สูบเดียว · 4 วาล์ว · SOHC · ระบายความร้อนด้วยน้ำ',
+        length: '181 ซม.', payload: '159 กก.', seat: '795 มม.', battery: 'GTZ8V · 12V 7.0Ah',
+        partbook: 'B5X-F8199-U1',
+      },
+      fluids: [
+        { name: 'น้ำมันเครื่อง', spec: 'SAE 10W-40 / 0W-30 · API SG+ · JASO MA/MB', amount: '1.50 ล. (เปลี่ยนกรอง 1.60 ล.)' },
+        { name: 'น้ำมันเฟืองท้าย', spec: 'SAE 10W-40 · API SG+', amount: '0.20 ล.' },
+        { name: 'น้ำยาหล่อเย็น', spec: 'Yamaha Coolant', amount: 'หม้อน้ำ 1.10 ล. · ถังพัก 0.18 ล.' },
+        { name: 'น้ำมันเชื้อเพลิง', spec: 'แก๊สโซฮอล์ E10–E20 · RON 90 ขึ้นไป', amount: 'ถัง 13 ล. · สำรอง 2.4 ล.' },
+      ],
+      tires: [
+        { pos: 'หน้า', size: '120/70-15 M/C 56P', brand: 'Dunlop Scootsmart · Tubeless', psi: '29 psi (200 kPa)' },
+        { pos: 'หลัง', size: '140/70-14 M/C 62P', brand: 'Dunlop Scootsmart · Tubeless', psi: '33 psi (225 kPa)' },
+      ],
+      bulbs: 'ไฟหน้า LED · ไฟเบรค/ท้าย LED · ไฟหรี่ LED · ไฟเลี้ยวหน้า 10.0W · ไฟเลี้ยวหลัง 10.0W · ส่องป้าย 5.0W',
+    };
+
+    const SCHEDULE = [
+      { key: 'engine_oil', title: 'น้ำมันเครื่อง', icon: '🛢️', km: 5000, months: 12, spec: '10W-40 · 1.6 ล. พร้อมกรอง', star: false },
+      { key: 'oil_filter', title: 'ไส้กรองน้ำมันเครื่อง', icon: '🧪', km: 10000, months: null, spec: 'เปลี่ยนพร้อมน้ำมันเครื่องครั้งเว้นครั้ง', star: false },
+      { key: 'gear_oil', title: 'น้ำมันเฟืองท้าย', icon: '⚙️', km: 10000, months: null, spec: '10W-40 · 0.20 ล. (ตรวจรั่วทุก 5,000)', star: false },
+      { key: 'v_belt', title: 'สายพานวี (V-belt)', icon: '🔗', km: 20000, months: null, spec: 'เปลี่ยนหรือเมื่อขอบคริก', star: true },
+      { key: 'spark_plug', title: 'หัวเทียน', icon: '⚡', km: 8000, months: null, spec: 'เปลี่ยนทุก 8,000 (ตรวจ/ทำความสะอาด 10,000)', star: false },
+      { key: 'air_filter', title: 'ไส้กรองอากาศ', icon: '💨', km: 12000, months: null, spec: 'เปลี่ยนทุก 12,000', star: false },
+      { key: 'vbelt_filter', title: 'กรองอากาศชุดสายพาน', icon: '🌀', km: 10000, months: null, spec: 'ทำความสะอาดทุก 10,000', star: true },
+      { key: 'brake_fluid', title: 'น้ำมันเบรค', icon: '🛑', km: null, months: 24, spec: 'เปลี่ยนทุก 2 ปี (ตรวจระดับทุก 5,000)', star: true },
+      { key: 'brake_hose', title: 'ท่อน้ำมันเบรค', icon: '🧵', km: null, months: 48, spec: 'เปลี่ยนทุก 4 ปี', star: true },
+      { key: 'coolant', title: 'น้ำยาหล่อเย็น', icon: '❄️', km: null, months: 36, spec: 'เปลี่ยนทุก 3 ปี (ตรวจระดับทุก 5,000)', star: true },
+      { key: 'steering_bearing', title: 'ลูกปืนคอรถ', icon: '🎯', km: 24000, months: null, spec: 'อัดจารบีทุก 24,000', star: true },
+      { key: 'tires', title: 'ยาง (ดอก/แรงดัน)', icon: '🛞', km: 5000, months: null, spec: 'หน้า 29 · หลัง 33 psi (ตรวจก่อนใช้ทุกครั้ง)', star: true },
+      { key: 'battery', title: 'แบตเตอรี่', icon: '🔋', km: 5000, months: null, spec: 'ตรวจแรงดันทุก 5,000', star: true },
+      { key: 'brake_pads', title: 'ผ้าเบรคหน้า/หลัง', icon: '🦶', km: 5000, months: null, spec: 'เปลี่ยนเมื่อสึกถึงขีด (ตรวจทุก 5,000)', star: true },
+      { key: 'general_check', title: 'ตรวจสภาพทั่วไป', icon: '🔍', km: 5000, months: 12, spec: 'ทุก 5,000 หรือ 1 ปี', star: false },
+    ];
+
+    const THAI_ITEMS = [
+      { key: 'tax', title: 'ภาษีรถประจำปี', icon: '📋', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
+      { key: 'prb', title: 'พ.ร.บ.', icon: '🛡️', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
+      { key: 'insurance', title: 'ประกันภาคสมัครใจ', icon: '📑', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
+    ];
+
+    const DEFAULT_DATA = {
+      vehicle: { model: 'Yamaha XMAX 300 (CZD300-A)', nickname: 'เจ้าฟ้า', plate: '', frameNo: '', engineNo: '', registerDate: '', currentOdo: 0 },
+      fuelLogs: [],
+      maintenanceLogs: [],
+      odoLogs: [],
+      scheduleState: {},
+      settings: { currency: 'THB', distanceUnit: 'km', warnAheadKm: 300, warnAheadDays: 14, enableThaiItems: true },
+    };
+
+    /* ============================== HELPERS ============================== */
+    const uuid = () => 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const fmt = (n, d = 0) => (n == null || isNaN(n)) ? '–' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const baht = (n) => (n == null || isNaN(n)) ? '–' : '฿' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    const todayStr = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    const parseDate = (s) => { if (!s) return null; const p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); };
+    const addMonths = (d, m) => { const x = new Date(d); x.setMonth(x.getMonth() + m); return x; };
+    const diffDays = (a, b) => Math.round((a - b) / 86400000);
+    const thDate = (s) => { const d = parseDate(s); if (!d) return '–'; const m = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return d.getDate() + ' ' + m[d.getMonth()] + ' ' + (d.getFullYear() + 543); };
+    const thMonthYear = (s) => { const d = parseDate(s); if (!d) return '–'; const m = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']; return m[d.getMonth()] + ' ' + (d.getFullYear() + 543); };
+    const monthKey = (s) => { const d = parseDate(s); return d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') : ''; };
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return structuredClone(DEFAULT_DATA);
+        const parsed = JSON.parse(raw);
+        return { ...structuredClone(DEFAULT_DATA), ...parsed,
+          vehicle: { ...DEFAULT_DATA.vehicle, ...(parsed.vehicle || {}) },
+          settings: { ...DEFAULT_DATA.settings, ...(parsed.settings || {}) } };
+      } catch (e) { return structuredClone(DEFAULT_DATA); }
+    }
+    function saveData(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch (e) { alert('บันทึกไม่สำเร็จ: พื้นที่เต็มหรือถูกปิด'); } }
+
+    /* ============================== BUSINESS LOGIC ============================== */
+    // fuel efficiency between consecutive full-tank fills
+    function computeFuelStats(fuelLogs) {
+      const sorted = [...fuelLogs].sort((a, b) => (a.odo - b.odo) || (a.date < b.date ? -1 : 1));
+      const result = sorted.map(f => ({ ...f, kmpl: null, dist: null }));
+      let lastFullIdx = -1, accLiters = 0;
+      for (let i = 0; i < sorted.length; i++) {
+        const f = sorted[i];
+        if (lastFullIdx >= 0) accLiters += Number(f.liters || 0);
+        if (f.isFull) {
+          if (lastFullIdx >= 0) {
+            const dist = f.odo - sorted[lastFullIdx].odo;
+            if (dist > 0 && accLiters > 0) { result[i].kmpl = dist / accLiters; result[i].dist = dist; }
+          }
+          lastFullIdx = i; accLiters = 0;
+        }
+      }
+      return result;
+    }
+    function avgKmpl(fuelStats) {
+      const v = fuelStats.filter(f => f.kmpl != null);
+      if (!v.length) return null;
+      return v.reduce((s, f) => s + f.kmpl, 0) / v.length;
+    }
+
+    function activeSchedule(settings) {
+      return settings.enableThaiItems ? [...SCHEDULE, ...THAI_ITEMS] : SCHEDULE;
+    }
+
+    function computeScheduleStatus(item, data) {
+      const st = data.scheduleState[item.key] || {};
+      const odo = data.vehicle.currentOdo || 0;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      let remKm = null, remDays = null, nextOdo = null, nextDateStr = null;
+      if (item.km != null && st.lastOdo != null) { nextOdo = st.lastOdo + item.km; remKm = nextOdo - odo; }
+      else if (item.km != null) { nextOdo = item.km; remKm = nextOdo - odo; }
+      if (item.months != null && st.lastDate) { const nd = addMonths(parseDate(st.lastDate), item.months); nextDateStr = nd.toISOString().slice(0,10); remDays = diffDays(nd, today); }
+      const warnKm = data.settings.warnAheadKm, warnDays = data.settings.warnAheadDays;
+      let level = 'ok'; // ok | warn | overdue | none
+      const has = remKm != null || remDays != null;
+      if (!has) level = 'none';
+      const over = (remKm != null && remKm <= 0) || (remDays != null && remDays <= 0);
+      const warn = (remKm != null && remKm <= warnKm) || (remDays != null && remDays <= warnDays);
+      if (over) level = 'overdue'; else if (warn) level = 'warn';
+      return { ...item, ...st, remKm, remDays, nextOdo, nextDateStr, level, done: !!(st.lastOdo != null || st.lastDate) };
+    }
+
+    function costPerKm(data) {
+      const fuel = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
+      const maint = data.maintenanceLogs.reduce((s, m) => s + Number(m.cost || 0), 0);
+      const odos = data.fuelLogs.map(f => f.odo).concat(data.maintenanceLogs.map(m => m.odo)).concat(data.odoLogs.map(o => o.odo)).filter(x => x > 0);
+      const range = odos.length ? (data.vehicle.currentOdo - Math.min(...odos)) : 0;
+      return range > 0 ? (fuel + maint) / range : null;
+    }
+
+    /* ============================== UI PRIMITIVES ============================== */
+    function Card({ className = '', children, glow }) {
+      return <div className={'rounded-3xl border border-white/[0.06] bg-ink-800/60 ' + (glow ? 'ring-glow ' : '') + className}>{children}</div>;
+    }
+
+    const LEVEL = {
+      overdue: { dot: 'bg-rose-500', text: 'text-rose-400', chip: 'bg-rose-500/15 text-rose-300 border-rose-500/30', label: 'เลยกำหนด', ring: 'ring-rose-500/40' },
+      warn: { dot: 'bg-amber-400', text: 'text-amber-300', chip: 'bg-amber-400/15 text-amber-200 border-amber-400/30', label: 'ใกล้ถึง', ring: 'ring-amber-400/40' },
+      ok: { dot: 'bg-emerald-400', text: 'text-emerald-300', chip: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', label: 'ปกติ', ring: 'ring-emerald-500/30' },
+      none: { dot: 'bg-slate-500', text: 'text-slate-400', chip: 'bg-slate-500/15 text-slate-300 border-slate-500/30', label: 'ยังไม่บันทึก', ring: 'ring-slate-500/30' },
+    };
+
+    function StatusChip({ level }) {
+      const l = LEVEL[level] || LEVEL.none;
+      return <span className={'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ' + l.chip}><span className={'w-1.5 h-1.5 rounded-full ' + l.dot}></span>{l.label}</span>;
+    }
+
+    function Field({ label, children, hint }) {
+      return (
+        <label className="block">
+          <span className="text-[13px] font-medium text-slate-400 mb-1.5 block">{label}</span>
+          {children}
+          {hint && <span className="text-[11px] text-slate-500 mt-1 block">{hint}</span>}
+        </label>
+      );
+    }
+
+    const inputCls = 'w-full bg-ink-900/80 border border-white/[0.08] rounded-2xl px-4 py-3.5 text-[17px] text-white placeholder-slate-600 focus:border-brand/60 focus:ring-2 focus:ring-brand/20 transition num';
+
+    function NumInput(props) {
+      return <input inputMode="decimal" type="text" {...props} className={inputCls}
+        onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); props.onChange && props.onChange(v); }} value={props.value} />;
+    }
+    function TextInput(props) {
+      return <input type="text" {...props} className={inputCls + ' text-left'} onChange={e => props.onChange && props.onChange(e.target.value)} value={props.value} />;
+    }
+    function DateInput(props) {
+      return <input type="date" {...props} className={inputCls} style={{ colorScheme: 'dark' }} onChange={e => props.onChange && props.onChange(e.target.value)} value={props.value} />;
+    }
+
+    function Sheet({ open, onClose, title, children }) {
+      if (!open) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center anim-fade" onMouseDown={onClose}>
+          <div className="absolute inset-0 bg-black/60"></div>
+          <div className="relative w-full max-w-md glass-strong rounded-t-[2rem] border-t border-x border-white/10 anim-sheet max-h-[92vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
+            <div className="flex-shrink-0 pt-3 pb-1 flex justify-center"><div className="w-10 h-1.5 rounded-full bg-white/20"></div></div>
+            <div className="flex items-center justify-between px-5 pt-2 pb-3 flex-shrink-0">
+              <h3 className="text-xl font-bold text-white">{title}</h3>
+              <button onClick={onClose} className="press w-9 h-9 rounded-full bg-white/10 text-slate-300 flex items-center justify-center text-lg">✕</button>
+            </div>
+            <div className="overflow-y-auto no-scrollbar px-5 pb-8 safe-b">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function PrimaryBtn({ children, onClick, className = '', disabled }) {
+      return <button onClick={onClick} disabled={disabled} className={'press w-full py-4 rounded-2xl font-bold text-[17px] text-ink-950 bg-gradient-to-r from-brand to-cyan-300 disabled:opacity-40 disabled:grayscale ' + className}>{children}</button>;
+    }
+    function GhostBtn({ children, onClick, className = '' }) {
+      return <button onClick={onClick} className={'press py-3.5 px-4 rounded-2xl font-semibold text-[15px] bg-white/[0.06] border border-white/[0.08] text-slate-200 ' + className}>{children}</button>;
+    }
+
+    /* ============================== APP ============================== */
+    function App() {
+      const [data, setData] = useState(loadData);
+      const [tab, setTab] = useState('home');
+      const [toast, setToast] = useState(null);
+
+      useEffect(() => { saveData(data); }, [data]);
+      const update = useCallback((fn) => setData(d => { const n = structuredClone(d); fn(n); return n; }), []);
+      const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); }, []);
+
+      const ctx = { data, update, setData, showToast };
+
+      const tabs = [
+        { id: 'home', icon: '🏠', label: 'หน้าหลัก' },
+        { id: 'fuel', icon: '⛽', label: 'น้ำมัน' },
+        { id: 'maint', icon: '🔧', label: 'ซ่อมบำรุง' },
+        { id: 'report', icon: '📊', label: 'สรุป' },
+        { id: 'info', icon: '⚙️', label: 'ข้อมูลรถ' },
+      ];
+
+      return (
+        <div className="min-h-screen text-white relative" style={{ background: 'radial-gradient(120% 80% at 50% -10%, #122033 0%, #0a0b0f 45%, #070809 100%)' }}>
+          <div className="max-w-md mx-auto relative min-h-screen">
+            <div className="pb-tabbar">
+              {tab === 'home' && <HomeScreen ctx={ctx} go={setTab} />}
+              {tab === 'fuel' && <FuelScreen ctx={ctx} />}
+              {tab === 'maint' && <MaintScreen ctx={ctx} />}
+              {tab === 'report' && <ReportScreen ctx={ctx} />}
+              {tab === 'info' && <InfoScreen ctx={ctx} />}
+            </div>
+
+            {/* Tab bar */}
+            <div className="fixed bottom-0 inset-x-0 z-40">
+              <div className="max-w-md mx-auto px-3">
+                <div className="glass-strong border border-white/10 rounded-[1.75rem] mb-2 px-1.5 pt-1.5 tabbar-h shadow-2xl shadow-black/50">
+                  <div className="grid grid-cols-5 gap-1">
+                    {tabs.map(t => {
+                      const active = tab === t.id;
+                      return (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                          className={'press flex flex-col items-center justify-center py-2 rounded-2xl transition ' + (active ? 'bg-brand/15' : '')}>
+                          <span className={'text-[22px] leading-none transition ' + (active ? 'scale-110' : 'opacity-55 grayscale')}>{t.icon}</span>
+                          <span className={'text-[10px] mt-1 font-semibold ' + (active ? 'text-brand' : 'text-slate-500')}>{t.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {toast && (
+              <div className="fixed left-1/2 -translate-x-1/2 z-[60] anim-pop" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 6.5rem)' }}>
+                <div className="glass-strong border border-emerald-400/30 text-emerald-200 px-5 py-3 rounded-2xl text-sm font-semibold shadow-xl flex items-center gap-2">
+                  <span>✓</span>{toast}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================== HOME ============================== */
+    function HomeScreen({ ctx, go }) {
+      const { data, update, showToast } = ctx;
+      const [odoOpen, setOdoOpen] = useState(false);
+      const [fuelOpen, setFuelOpen] = useState(false);
+      const [maintOpen, setMaintOpen] = useState(false);
+      const [quickItem, setQuickItem] = useState(null);
+
+      const fuelStats = useMemo(() => computeFuelStats(data.fuelLogs), [data.fuelLogs]);
+      const avg = avgKmpl(fuelStats);
+      const lastFuel = [...data.fuelLogs].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      const cpk = costPerKm(data);
+
+      const alerts = useMemo(() => activeSchedule(data.settings)
+        .map(it => computeScheduleStatus(it, data))
+        .filter(s => s.level === 'overdue' || s.level === 'warn')
+        .sort((a, b) => {
+          const order = { overdue: 0, warn: 1 };
+          if (order[a.level] !== order[b.level]) return order[a.level] - order[b.level];
+          return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
+        }), [data]);
+
+      const markDone = (item) => {
+        update(d => {
+          d.scheduleState[item.key] = { lastOdo: d.vehicle.currentOdo, lastDate: todayStr() };
+          d.maintenanceLogs.push({ id: uuid(), date: todayStr(), odo: d.vehicle.currentOdo, itemKey: item.key, title: item.title, cost: 0, shop: '', note: 'ทำผ่านปุ่มลัด' });
+        });
+        showToast('บันทึก "' + item.title + '" แล้ว');
+      };
+
+      return (
+        <div className="px-4 pt-safe">
+          <div className="pt-3 pb-4 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] text-slate-400 font-medium">{data.vehicle.nickname || 'XMAX'} {data.vehicle.plate && '· ' + data.vehicle.plate}</div>
+              <div className="text-2xl font-extrabold tracking-tight">XMAX Logbook</div>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl">🛵</div>
+          </div>
+
+          {/* ODO Hero */}
+          <Card glow className="overflow-hidden anim-pop">
+            <div className="relative p-5">
+              <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-brand/10 blur-3xl"></div>
+              <div className="relative flex items-end justify-between">
+                <div>
+                  <div className="text-[13px] text-brand/90 font-semibold uppercase tracking-wider">เลขไมล์ปัจจุบัน</div>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-5xl font-black tracking-tight num">{fmt(data.vehicle.currentOdo)}</span>
+                    <span className="text-lg text-slate-400 font-semibold">กม.</span>
+                  </div>
+                </div>
+                <button onClick={() => setOdoOpen(true)} className="press px-4 py-2.5 rounded-2xl bg-brand/15 border border-brand/30 text-brand text-sm font-bold">อัปเดต</button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Quick stats */}
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <MiniStat label="เฉลี่ย" value={avg ? fmt(avg, 1) : '–'} unit="กม./ล." accent="text-brand" />
+            <MiniStat label="ราคาเติมล่าสุด" value={lastFuel ? fmt(lastFuel.pricePerL, 2) : '–'} unit="฿/ล." accent="text-cyan-300" />
+            <MiniStat label="ต้นทุน/กม." value={cpk ? fmt(cpk, 2) : '–'} unit="฿/กม." accent="text-emerald-300" />
+          </div>
+
+          {/* Actions */}
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <button onClick={() => setFuelOpen(true)} className="press p-4 rounded-3xl bg-gradient-to-br from-brand/20 to-brand/5 border border-brand/25 text-left">
+              <div className="text-2xl">⛽</div>
+              <div className="font-bold mt-1.5">เติมน้ำมัน</div>
+              <div className="text-[12px] text-slate-400">บันทึกการเติม</div>
+            </button>
+            <button onClick={() => setMaintOpen(true)} className="press p-4 rounded-3xl bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 border border-emerald-500/25 text-left">
+              <div className="text-2xl">🔧</div>
+              <div className="font-bold mt-1.5">บันทึกซ่อม</div>
+              <div className="text-[12px] text-slate-400">บันทึกการบำรุง</div>
+            </button>
+          </div>
+
+          {/* Alerts */}
+          <div className="mt-6 mb-2 flex items-center justify-between">
+            <h2 className="text-lg font-bold">การแจ้งเตือน</h2>
+            {alerts.length > 0 && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300">{alerts.length} รายการ</span>}
+          </div>
+
+          {alerts.length === 0 ? (
+            <Card className="p-6 text-center">
+              <div className="text-3xl mb-1">✨</div>
+              <div className="font-semibold text-slate-300">ไม่มีรายการใกล้ถึงกำหนด</div>
+              <div className="text-[13px] text-slate-500 mt-0.5">ดูแลรถได้ดีมาก</div>
+            </Card>
+          ) : (
+            <div className="space-y-2.5">
+              {alerts.map(a => {
+                const l = LEVEL[a.level];
+                return (
+                  <Card key={a.key} className={'p-4 ring-1 ' + l.ring}>
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl mt-0.5">{a.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-bold truncate">{a.title}</div>
+                          <StatusChip level={a.level} />
+                        </div>
+                        <div className={'text-[13px] mt-1 font-medium ' + l.text}>
+                          {a.remKm != null && (a.remKm <= 0 ? 'เลย ' + fmt(-a.remKm) + ' กม.' : 'อีก ' + fmt(a.remKm) + ' กม.')}
+                          {a.remKm != null && a.remDays != null && ' · '}
+                          {a.remDays != null && (a.remDays <= 0 ? 'เลย ' + fmt(-a.remDays) + ' วัน' : 'อีก ' + fmt(a.remDays) + ' วัน')}
+                          {a.nextOdo != null && <span className="text-slate-500"> · ครบที่ {fmt(a.nextOdo)}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => setQuickItem(a)} className="press mt-3 w-full py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-sm font-bold text-brand">ทำแล้ว ✓</button>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          <OdoSheet open={odoOpen} onClose={() => setOdoOpen(false)} ctx={ctx} />
+          <FuelSheet open={fuelOpen} onClose={() => setFuelOpen(false)} ctx={ctx} />
+          <MaintSheet open={maintOpen} onClose={() => setMaintOpen(false)} ctx={ctx} />
+          <ConfirmDone item={quickItem} onClose={() => setQuickItem(null)} onConfirm={() => { markDone(quickItem); setQuickItem(null); }} odo={data.vehicle.currentOdo} />
+        </div>
+      );
+    }
+
+    function MiniStat({ label, value, unit, accent }) {
+      return (
+        <Card className="p-3.5">
+          <div className="text-[11px] text-slate-500 font-medium leading-tight h-7">{label}</div>
+          <div className={'text-2xl font-black num ' + accent}>{value}</div>
+          <div className="text-[10px] text-slate-500 font-medium">{unit}</div>
+        </Card>
+      );
+    }
+
+    function ConfirmDone({ item, onClose, onConfirm, odo }) {
+      if (!item) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 anim-fade" onMouseDown={onClose}>
+          <div className="absolute inset-0 bg-black/60"></div>
+          <div className="relative w-full max-w-sm glass-strong border border-white/10 rounded-3xl p-6 anim-pop" onMouseDown={e => e.stopPropagation()}>
+            <div className="text-4xl text-center mb-2">{item.icon}</div>
+            <div className="text-center font-bold text-lg">บันทึกว่าทำแล้ว?</div>
+            <div className="text-center text-slate-400 text-sm mt-1">{item.title}</div>
+            <div className="text-center text-slate-500 text-xs mt-2">จะตั้งค่าวันที่ {thDate(todayStr())} · เลขไมล์ {fmt(odo)} กม.</div>
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              <GhostBtn onClick={onClose} className="text-center">ยกเลิก</GhostBtn>
+              <PrimaryBtn onClick={onConfirm} className="!py-3.5">ยืนยัน</PrimaryBtn>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================== SHEETS ============================== */
+    function OdoSheet({ open, onClose, ctx }) {
+      const { data, update, showToast } = ctx;
+      const [odo, setOdo] = useState('');
+      const [note, setNote] = useState('');
+      useEffect(() => { if (open) { setOdo(String(data.vehicle.currentOdo || '')); setNote(''); } }, [open]);
+      const save = () => {
+        const v = parseFloat(odo);
+        if (isNaN(v)) return;
+        update(d => { d.vehicle.currentOdo = v; d.odoLogs.push({ id: uuid(), date: todayStr(), odo: v, note }); });
+        showToast('อัปเดตเลขไมล์เป็น ' + fmt(v) + ' กม.');
+        onClose();
+      };
+      return (
+        <Sheet open={open} onClose={onClose} title="อัปเดตเลขไมล์">
+          <div className="space-y-4">
+            <Field label="เลขไมล์ปัจจุบัน (กม.)"><NumInput value={odo} onChange={setOdo} placeholder="0" /></Field>
+            <Field label="หมายเหตุ (ถ้ามี)"><TextInput value={note} onChange={setNote} placeholder="เช่น เติมน้ำมันเช้านี้" /></Field>
+            <PrimaryBtn onClick={save}>บันทึก</PrimaryBtn>
+          </div>
+        </Sheet>
+      );
+    }
+
+    function FuelSheet({ open, onClose, ctx, edit }) {
+      const { data, update, showToast } = ctx;
+      const [f, setF] = useState({});
+      useEffect(() => {
+        if (open) setF(edit ? { ...edit } : { date: todayStr(), odo: String(data.vehicle.currentOdo || ''), liters: '', pricePerL: '', totalCost: '', isFull: true, station: '', note: '' });
+      }, [open]);
+      const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+      // auto-calc total from liters * price
+      const onLiters = (v) => { setF(p => { const t = (parseFloat(v) * parseFloat(p.pricePerL)); return { ...p, liters: v, totalCost: (!isNaN(t) ? t.toFixed(2) : p.totalCost) }; }); };
+      const onPrice = (v) => { setF(p => { const t = (parseFloat(p.liters) * parseFloat(v)); return { ...p, pricePerL: v, totalCost: (!isNaN(t) ? t.toFixed(2) : p.totalCost) }; }); };
+      const onTotal = (v) => { setF(p => { const pr = (parseFloat(v) / parseFloat(p.liters)); return { ...p, totalCost: v, pricePerL: (!isNaN(pr) && isFinite(pr) ? pr.toFixed(2) : p.pricePerL) }; }); };
+
+      const save = () => {
+        const odo = parseFloat(f.odo), liters = parseFloat(f.liters);
+        if (isNaN(odo) || isNaN(liters)) return;
+        const rec = { id: edit ? edit.id : uuid(), date: f.date, odo, liters, pricePerL: parseFloat(f.pricePerL) || 0, totalCost: parseFloat(f.totalCost) || 0, isFull: !!f.isFull, station: f.station || '', note: f.note || '' };
+        update(d => {
+          if (edit) { const i = d.fuelLogs.findIndex(x => x.id === edit.id); if (i >= 0) d.fuelLogs[i] = rec; }
+          else d.fuelLogs.push(rec);
+          if (odo > (d.vehicle.currentOdo || 0)) d.vehicle.currentOdo = odo;
+        });
+        showToast(edit ? 'แก้ไขแล้ว' : 'บันทึกการเติมน้ำมันแล้ว');
+        onClose();
+      };
+
+      return (
+        <Sheet open={open} onClose={onClose} title={edit ? 'แก้ไขการเติมน้ำมัน' : 'เติมน้ำมัน'}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="วันที่"><DateInput value={f.date} onChange={v => set('date', v)} /></Field>
+              <Field label="เลขไมล์ (กม.)"><NumInput value={f.odo} onChange={v => set('odo', v)} placeholder="0" /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="จำนวนลิตร"><NumInput value={f.liters} onChange={onLiters} placeholder="0.00" /></Field>
+              <Field label="ราคา/ลิตร (฿)"><NumInput value={f.pricePerL} onChange={onPrice} placeholder="0.00" /></Field>
+            </div>
+            <Field label="จำนวนเงินรวม (฿)" hint="กรอกช่องใดก็ได้ ระบบคำนวณให้อัตโนมัติ"><NumInput value={f.totalCost} onChange={onTotal} placeholder="0.00" /></Field>
+
+            <button onClick={() => set('isFull', !f.isFull)} className="press w-full flex items-center justify-between p-4 rounded-2xl bg-ink-900/80 border border-white/[0.08]">
+              <div className="text-left">
+                <div className="font-semibold text-[15px]">เติมเต็มถัง</div>
+                <div className="text-[12px] text-slate-500">ใช้คำนวณอัตราสิ้นเปลือง กม./ลิตร</div>
+              </div>
+              <div className={'w-12 h-7 rounded-full transition relative ' + (f.isFull ? 'bg-brand' : 'bg-white/15')}>
+                <div className={'absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all ' + (f.isFull ? 'left-[1.4rem]' : 'left-0.5')}></div>
+              </div>
+            </button>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="ปั๊ม (ถ้ามี)"><TextInput value={f.station} onChange={v => set('station', v)} placeholder="PT, PTT..." /></Field>
+              <Field label="หมายเหตุ"><TextInput value={f.note} onChange={v => set('note', v)} placeholder="" /></Field>
+            </div>
+            <PrimaryBtn onClick={save}>{edit ? 'บันทึกการแก้ไข' : 'บันทึก'}</PrimaryBtn>
+          </div>
+        </Sheet>
+      );
+    }
+
+    function MaintSheet({ open, onClose, ctx, edit, presetKey }) {
+      const { data, update, showToast } = ctx;
+      const [m, setM] = useState({});
+      const allItems = activeSchedule(data.settings);
+      useEffect(() => {
+        if (open) setM(edit ? { ...edit } : { date: todayStr(), odo: String(data.vehicle.currentOdo || ''), itemKey: presetKey || allItems[0].key, cost: '', shop: '', note: '' });
+      }, [open]);
+      const set = (k, v) => setM(p => ({ ...p, [k]: v }));
+      const item = allItems.find(i => i.key === m.itemKey);
+
+      const save = () => {
+        const odo = parseFloat(m.odo);
+        if (isNaN(odo)) return;
+        const it = allItems.find(i => i.key === m.itemKey);
+        const rec = { id: edit ? edit.id : uuid(), date: m.date, odo, itemKey: m.itemKey, title: it ? it.title : (m.title || 'อื่นๆ'), cost: parseFloat(m.cost) || 0, shop: m.shop || '', note: m.note || '' };
+        update(d => {
+          if (edit) { const i = d.maintenanceLogs.findIndex(x => x.id === edit.id); if (i >= 0) d.maintenanceLogs[i] = rec; }
+          else d.maintenanceLogs.push(rec);
+          if (odo > (d.vehicle.currentOdo || 0)) d.vehicle.currentOdo = odo;
+          // reset schedule clock for this item
+          const cur = d.scheduleState[m.itemKey];
+          if (!cur || odo >= (cur.lastOdo || 0)) d.scheduleState[m.itemKey] = { lastOdo: odo, lastDate: m.date };
+        });
+        showToast(edit ? 'แก้ไขแล้ว' : 'บันทึกการบำรุงแล้ว');
+        onClose();
+      };
+
+      return (
+        <Sheet open={open} onClose={onClose} title={edit ? 'แก้ไขประวัติซ่อม' : 'บันทึกการบำรุงรักษา'}>
+          <div className="space-y-4">
+            <Field label="รายการ">
+              <select value={m.itemKey} onChange={e => set('itemKey', e.target.value)} className={inputCls + ' appearance-none'}>
+                {allItems.map(i => <option key={i.key} value={i.key} className="bg-ink-850">{i.icon + ' ' + i.title}</option>)}
+              </select>
+            </Field>
+            {item && item.spec && <div className="text-[12px] text-slate-400 -mt-2 px-1 leading-relaxed">📌 {item.spec}</div>}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="วันที่"><DateInput value={m.date} onChange={v => set('date', v)} /></Field>
+              <Field label="เลขไมล์ (กม.)"><NumInput value={m.odo} onChange={v => set('odo', v)} placeholder="0" /></Field>
+            </div>
+            <Field label="ค่าใช้จ่าย (฿)"><NumInput value={m.cost} onChange={v => set('cost', v)} placeholder="0" /></Field>
+            <Field label="ร้าน/ศูนย์"><TextInput value={m.shop} onChange={v => set('shop', v)} placeholder="ศูนย์ Yamaha..." /></Field>
+            <Field label="หมายเหตุ"><TextInput value={m.note} onChange={v => set('note', v)} placeholder="เช่น Yamalube 10W-40 + กรอง" /></Field>
+            <PrimaryBtn onClick={save}>{edit ? 'บันทึกการแก้ไข' : 'บันทึก & รีเซ็ตรอบ'}</PrimaryBtn>
+          </div>
+        </Sheet>
+      );
+    }
+
+    /* ============================== FUEL SCREEN ============================== */
+    function FuelScreen({ ctx }) {
+      const { data, update } = ctx;
+      const [open, setOpen] = useState(false);
+      const [edit, setEdit] = useState(null);
+      const stats = useMemo(() => computeFuelStats(data.fuelLogs), [data.fuelLogs]);
+      const list = [...stats].sort((a, b) => (a.date < b.date ? 1 : -1));
+      const totalCost = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
+      const totalLiters = data.fuelLogs.reduce((s, f) => s + Number(f.liters || 0), 0);
+      const avg = avgKmpl(stats);
+
+      const del = (id) => { if (confirm('ลบรายการนี้?')) update(d => { d.fuelLogs = d.fuelLogs.filter(x => x.id !== id); }); };
+      const openEdit = (f) => { setEdit(data.fuelLogs.find(x => x.id === f.id)); setOpen(true); };
+
+      return (
+        <div className="px-4 pt-safe">
+          <Header title="น้ำมัน" subtitle={data.fuelLogs.length + ' รายการ'} />
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <MiniStat label="เฉลี่ย" value={avg ? fmt(avg, 1) : '–'} unit="กม./ล." accent="text-brand" />
+            <MiniStat label="รวมลิตร" value={fmt(totalLiters, 1)} unit="ลิตร" accent="text-cyan-300" />
+            <MiniStat label="รวมค่าน้ำมัน" value={fmt(totalCost)} unit="฿" accent="text-emerald-300" />
+          </div>
+
+          <button onClick={() => { setEdit(null); setOpen(true); }} className="press w-full mb-4 py-3.5 rounded-2xl bg-gradient-to-r from-brand to-cyan-300 text-ink-950 font-bold">+ เติมน้ำมัน</button>
+
+          {list.length === 0 ? (
+            <EmptyState icon="⛽" title="ยังไม่มีบันทึกน้ำมัน" sub="กดปุ่มด้านบนเพื่อเริ่มบันทึก" />
+          ) : (
+            <div className="space-y-2.5">
+              {list.map(f => (
+                <Card key={f.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[15px]">{thDate(f.date)}</span>
+                        {f.isFull && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-brand/15 text-brand font-bold">เต็มถัง</span>}
+                        {f.station && <span className="text-[11px] text-slate-500">· {f.station}</span>}
+                      </div>
+                      <div className="text-[13px] text-slate-400 mt-1 num">
+                        {fmt(f.liters, 2)} ล. × {fmt(f.pricePerL, 2)} ฿ · ไมล์ {fmt(f.odo)}
+                      </div>
+                      {f.kmpl != null && (
+                        <div className="text-[13px] mt-1 font-semibold text-brand num">⚡ {fmt(f.kmpl, 2)} กม./ล. <span className="text-slate-500 font-normal">({fmt(f.dist)} กม.)</span></div>
+                      )}
+                      {f.note && <div className="text-[12px] text-slate-500 mt-1">{f.note}</div>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-lg font-black num text-emerald-300">{baht(f.totalCost)}</div>
+                      <div className="flex gap-1 mt-2 justify-end">
+                        <button onClick={() => openEdit(f)} className="press text-xs px-2 py-1 rounded-lg bg-white/[0.06] text-slate-300">แก้ไข</button>
+                        <button onClick={() => del(f.id)} className="press text-xs px-2 py-1 rounded-lg bg-rose-500/10 text-rose-300">ลบ</button>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+          <FuelSheet open={open} onClose={() => { setOpen(false); setEdit(null); }} ctx={ctx} edit={edit} />
+        </div>
+      );
+    }
+
+    /* ============================== MAINT SCREEN ============================== */
+    function MaintScreen({ ctx }) {
+      const { data, update, showToast } = ctx;
+      const [sub, setSub] = useState('schedule');
+      const [open, setOpen] = useState(false);
+      const [edit, setEdit] = useState(null);
+      const [presetKey, setPresetKey] = useState(null);
+      const [quickItem, setQuickItem] = useState(null);
+
+      const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)), [data]);
+      const sorted = [...items].sort((a, b) => {
+        const rank = { overdue: 0, warn: 1, ok: 2, none: 3 };
+        if (rank[a.level] !== rank[b.level]) return rank[a.level] - rank[b.level];
+        return (a.remKm ?? 9e9) - (b.remKm ?? 9e9);
+      });
+      const history = [...data.maintenanceLogs].sort((a, b) => (a.date < b.date ? 1 : (a.date > b.date ? -1 : b.odo - a.odo)));
+
+      const markDone = (item) => {
+        update(d => {
+          d.scheduleState[item.key] = { lastOdo: d.vehicle.currentOdo, lastDate: todayStr() };
+          d.maintenanceLogs.push({ id: uuid(), date: todayStr(), odo: d.vehicle.currentOdo, itemKey: item.key, title: item.title, cost: 0, shop: '', note: 'ทำผ่านปุ่มลัด' });
+        });
+        showToast('บันทึก "' + item.title + '" แล้ว');
+      };
+      const delHist = (id) => { if (confirm('ลบประวัตินี้?')) update(d => { d.maintenanceLogs = d.maintenanceLogs.filter(x => x.id !== id); }); };
+
+      return (
+        <div className="px-4 pt-safe">
+          <Header title="ซ่อมบำรุง" subtitle="Yamaha XMAX 300" />
+
+          <div className="flex gap-1 p-1 rounded-2xl bg-ink-900/80 border border-white/[0.06] mb-4">
+            {[['schedule', 'ตารางบำรุง'], ['history', 'ประวัติ']].map(([k, l]) => (
+              <button key={k} onClick={() => setSub(k)} className={'flex-1 py-2.5 rounded-xl text-sm font-bold transition ' + (sub === k ? 'bg-brand text-ink-950' : 'text-slate-400')}>{l}</button>
+            ))}
+          </div>
+
+          {sub === 'schedule' ? (
+            <div className="space-y-2.5">
+              {sorted.map(s => {
+                const l = LEVEL[s.level];
+                return (
+                  <Card key={s.key} className={'p-4 ' + (s.level === 'overdue' || s.level === 'warn' ? 'ring-1 ' + l.ring : '')}>
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl mt-0.5">{s.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-bold truncate flex items-center gap-1.5">{s.title}{s.star && <span className="text-amber-400 text-xs">★</span>}</div>
+                          <StatusChip level={s.level} />
+                        </div>
+                        <div className="text-[12px] text-slate-500 mt-0.5">
+                          {s.km != null && 'ทุก ' + fmt(s.km) + ' กม.'}{s.km != null && s.months != null && ' · '}{s.months != null && 'ทุก ' + s.months + ' เดือน'}
+                        </div>
+                        <div className="text-[12px] text-slate-400 mt-1.5 leading-relaxed">{s.spec}</div>
+
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px]">
+                          {s.done ? (
+                            <>
+                              {s.lastOdo != null && <span className="text-slate-500">ล่าสุด: <span className="text-slate-300 num">{fmt(s.lastOdo)} กม.</span></span>}
+                              {s.lastDate && <span className="text-slate-500">{thDate(s.lastDate)}</span>}
+                            </>
+                          ) : <span className="text-slate-600">ยังไม่เคยบันทึก</span>}
+                        </div>
+                        {(s.remKm != null || s.remDays != null) && (
+                          <div className={'text-[13px] mt-1 font-semibold ' + l.text}>
+                            {s.remKm != null && (s.remKm <= 0 ? 'เลย ' + fmt(-s.remKm) + ' กม.' : 'อีก ' + fmt(s.remKm) + ' กม.')}
+                            {s.remKm != null && s.remDays != null && ' · '}
+                            {s.remDays != null && (s.remDays <= 0 ? 'เลย ' + fmt(-s.remDays) + ' วัน' : 'อีก ' + fmt(s.remDays) + ' วัน')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <button onClick={() => setQuickItem(s)} className="press py-2.5 rounded-xl bg-brand/15 border border-brand/25 text-sm font-bold text-brand">ทำแล้ว ✓</button>
+                      <button onClick={() => { setPresetKey(s.key); setEdit(null); setOpen(true); }} className="press py-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-sm font-bold text-slate-300">บันทึกแบบละเอียด</button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <button onClick={() => { setPresetKey(null); setEdit(null); setOpen(true); }} className="press w-full mb-4 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-300 text-ink-950 font-bold">+ บันทึกการบำรุง</button>
+              {history.length === 0 ? <EmptyState icon="🔧" title="ยังไม่มีประวัติ" sub="บันทึกการบำรุงครั้งแรกของคุณ" /> : (
+                <div className="relative pl-6">
+                  <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-white/10"></div>
+                  <div className="space-y-3">
+                    {history.map(h => {
+                      const it = activeSchedule(data.settings).find(i => i.key === h.itemKey);
+                      return (
+                        <div key={h.id} className="relative">
+                          <div className="absolute -left-[1.4rem] top-3 w-3.5 h-3.5 rounded-full bg-brand border-2 border-ink-900"></div>
+                          <Card className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold flex items-center gap-1.5">{it ? it.icon : '🔧'} {h.title}</div>
+                                <div className="text-[12px] text-slate-400 mt-1 num">{thDate(h.date)} · ไมล์ {fmt(h.odo)} กม.</div>
+                                {h.shop && <div className="text-[12px] text-slate-500 mt-0.5">🏪 {h.shop}</div>}
+                                {h.note && <div className="text-[12px] text-slate-500 mt-0.5">{h.note}</div>}
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                {h.cost > 0 && <div className="font-black num text-emerald-300">{baht(h.cost)}</div>}
+                                <div className="flex gap-1 mt-2 justify-end">
+                                  <button onClick={() => { setEdit(h); setPresetKey(null); setOpen(true); }} className="press text-xs px-2 py-1 rounded-lg bg-white/[0.06] text-slate-300">แก้ไข</button>
+                                  <button onClick={() => delHist(h.id)} className="press text-xs px-2 py-1 rounded-lg bg-rose-500/10 text-rose-300">ลบ</button>
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <MaintSheet open={open} onClose={() => { setOpen(false); setEdit(null); setPresetKey(null); }} ctx={ctx} edit={edit} presetKey={presetKey} />
+          <ConfirmDone item={quickItem} onClose={() => setQuickItem(null)} onConfirm={() => { markDone(quickItem); setQuickItem(null); }} odo={data.vehicle.currentOdo} />
+        </div>
+      );
+    }
+
+    /* ============================== REPORT SCREEN ============================== */
+    function ReportScreen({ ctx }) {
+      const { data } = ctx;
+      const fuelStats = useMemo(() => computeFuelStats(data.fuelLogs), [data.fuelLogs]);
+
+      const totalFuel = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
+      const totalMaint = data.maintenanceLogs.reduce((s, m) => s + Number(m.cost || 0), 0);
+      const cpk = costPerKm(data);
+      const odos = data.fuelLogs.map(f => f.odo).concat(data.maintenanceLogs.map(m => m.odo)).concat(data.odoLogs.map(o => o.odo)).filter(x => x > 0);
+      const dist = odos.length ? data.vehicle.currentOdo - Math.min(...odos) : 0;
+
+      // monthly aggregation
+      const monthMap = {};
+      data.fuelLogs.forEach(f => { const k = monthKey(f.date); if (!k) return; (monthMap[k] = monthMap[k] || { fuel: 0, maint: 0 }).fuel += Number(f.totalCost || 0); });
+      data.maintenanceLogs.forEach(m => { const k = monthKey(m.date); if (!k) return; (monthMap[k] = monthMap[k] || { fuel: 0, maint: 0 }).maint += Number(m.cost || 0); });
+      const monthly = Object.keys(monthMap).sort().slice(-6).map(k => ({ name: thMonthYear(k + '-01').replace(' 25', ' '), 'น้ำมัน': Math.round(monthMap[k].fuel), 'ซ่อมบำรุง': Math.round(monthMap[k].maint) }));
+
+      const effData = fuelStats.filter(f => f.kmpl != null).map(f => ({ name: thDate(f.date).slice(0, 6), value: +f.kmpl.toFixed(2) }));
+
+      return (
+        <div className="px-4 pt-safe">
+          <Header title="สรุป" subtitle="ภาพรวมค่าใช้จ่าย" />
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <BigStat label="ค่าน้ำมันรวม" value={baht(totalFuel)} icon="⛽" accent="from-brand/20 to-brand/5 border-brand/25" />
+            <BigStat label="ค่าบำรุงรวม" value={baht(totalMaint)} icon="🔧" accent="from-emerald-500/15 to-emerald-500/5 border-emerald-500/25" />
+            <BigStat label="ต้นทุนต่อ กม." value={cpk ? baht(cpk) : '–'} icon="📈" accent="from-cyan-500/15 to-cyan-500/5 border-cyan-500/25" />
+            <BigStat label="ระยะทางรวม" value={fmt(dist) + ' กม.'} icon="🛣️" accent="from-violet-500/15 to-violet-500/5 border-violet-500/25" />
+          </div>
+
+          <Card className="p-4 mb-3">
+            <div className="font-bold mb-1">ค่าใช้จ่ายรายเดือน</div>
+            <div className="flex items-center gap-4 mb-2 text-[12px]">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-brand"></span><span className="text-slate-400">น้ำมัน</span></span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-400"></span><span className="text-slate-400">ซ่อมบำรุง</span></span>
+            </div>
+            {monthly.length ? <BarChart data={monthly} /> : <ChartEmpty />}
+          </Card>
+
+          <Card className="p-4">
+            <div className="font-bold mb-3">อัตราสิ้นเปลือง (กม./ลิตร)</div>
+            {effData.length >= 2 ? <LineChart data={effData} /> : <ChartEmpty msg="ต้องเติมเต็มถังอย่างน้อย 2 ครั้ง" />}
+          </Card>
+        </div>
+      );
+    }
+
+    /* ---- Custom SVG charts (offline, no deps) ---- */
+    function BarChart({ data }) {
+      const W = 320, H = 200, padL = 34, padB = 26, padT = 10;
+      const max = Math.max(1, ...data.flatMap(d => [d['น้ำมัน'], d['ซ่อมบำรุง']]));
+      const niceMax = niceCeil(max);
+      const plotW = W - padL - 8, plotH = H - padB - padT;
+      const groupW = plotW / data.length;
+      const barW = Math.min(18, groupW / 2.6);
+      const ticks = 4;
+      const y = v => padT + plotH - (v / niceMax) * plotH;
+      return (
+        <svg viewBox={'0 0 ' + W + ' ' + H} width="100%" height={H} style={{ overflow: 'visible' }}>
+          {Array.from({ length: ticks + 1 }).map((_, i) => {
+            const v = (niceMax / ticks) * i;
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y(v)} x2={W - 4} y2={y(v)} stroke="#ffffff12" strokeDasharray="3 3" />
+                <text x={padL - 6} y={y(v) + 3} fontSize="9" fill="#64748b" textAnchor="end">{kFmt(v)}</text>
+              </g>
+            );
+          })}
+          {data.map((d, i) => {
+            const cx = padL + groupW * i + groupW / 2;
+            return (
+              <g key={i}>
+                <rect x={cx - barW - 1} y={y(d['น้ำมัน'])} width={barW} height={Math.max(0, padT + plotH - y(d['น้ำมัน']))} rx="3" fill="#38bdf8" />
+                <rect x={cx + 1} y={y(d['ซ่อมบำรุง'])} width={barW} height={Math.max(0, padT + plotH - y(d['ซ่อมบำรุง']))} rx="3" fill="#34d399" />
+                <text x={cx} y={H - 8} fontSize="9.5" fill="#94a3b8" textAnchor="middle">{d.name}</text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+
+    function LineChart({ data }) {
+      const W = 320, H = 190, padL = 34, padB = 24, padT = 12, padR = 8;
+      const vals = data.map(d => d.value);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const lo = Math.floor(min - 2), hi = Math.ceil(max + 2), span = Math.max(1, hi - lo);
+      const plotW = W - padL - padR, plotH = H - padB - padT;
+      const x = i => padL + (data.length === 1 ? plotW / 2 : (plotW / (data.length - 1)) * i);
+      const y = v => padT + plotH - ((v - lo) / span) * plotH;
+      const pts = data.map((d, i) => x(i) + ',' + y(d.value));
+      const area = 'M' + x(0) + ',' + (padT + plotH) + ' L' + pts.join(' L') + ' L' + x(data.length - 1) + ',' + (padT + plotH) + ' Z';
+      const ticks = 4;
+      return (
+        <svg viewBox={'0 0 ' + W + ' ' + H} width="100%" height={H} style={{ overflow: 'visible' }}>
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {Array.from({ length: ticks + 1 }).map((_, i) => {
+            const v = lo + (span / ticks) * i;
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y(v)} x2={W - padR} y2={y(v)} stroke="#ffffff12" strokeDasharray="3 3" />
+                <text x={padL - 6} y={y(v) + 3} fontSize="9" fill="#64748b" textAnchor="end">{v.toFixed(0)}</text>
+              </g>
+            );
+          })}
+          <path d={area} fill="url(#lg)" />
+          <polyline points={pts.join(' ')} fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          {data.map((d, i) => (
+            <g key={i}>
+              <circle cx={x(i)} cy={y(d.value)} r="3.5" fill="#38bdf8" stroke="#0a0b0f" strokeWidth="1.5" />
+              {(i === 0 || i === data.length - 1 || data.length <= 6) && <text x={x(i)} y={H - 6} fontSize="9" fill="#94a3b8" textAnchor="middle">{d.name}</text>}
+            </g>
+          ))}
+        </svg>
+      );
+    }
+
+    function niceCeil(v) {
+      if (v <= 0) return 1;
+      const mag = Math.pow(10, Math.floor(Math.log10(v)));
+      const n = v / mag;
+      const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+      return step * mag;
+    }
+    function kFmt(v) { return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v)); }
+
+    function BigStat({ label, value, icon, accent }) {
+      return (
+        <div className={'rounded-3xl p-4 bg-gradient-to-br border ' + accent}>
+          <div className="text-2xl">{icon}</div>
+          <div className="text-[12px] text-slate-400 mt-2">{label}</div>
+          <div className="text-xl font-black num mt-0.5">{value}</div>
+        </div>
+      );
+    }
+    function ChartEmpty({ msg }) {
+      return <div className="h-[180px] flex flex-col items-center justify-center text-slate-600"><div className="text-3xl mb-2">📊</div><div className="text-sm">{msg || 'ยังไม่มีข้อมูลเพียงพอ'}</div></div>;
+    }
+
+    /* ============================== INFO / SETTINGS ============================== */
+    function InfoScreen({ ctx }) {
+      const { data, update, setData, showToast } = ctx;
+      const [veh, setVeh] = useState(data.vehicle);
+      const fileRef = useRef(null);
+      useEffect(() => { setVeh(data.vehicle); }, [data.vehicle]);
+
+      const saveVeh = () => { update(d => { d.vehicle = { ...d.vehicle, ...veh, currentOdo: parseFloat(veh.currentOdo) || 0 }; }); showToast('บันทึกข้อมูลรถแล้ว'); };
+      const setV = (k, v) => setVeh(p => ({ ...p, [k]: v }));
+
+      const exportJSON = () => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'xmax_logbook_' + todayStr() + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('ส่งออกไฟล์แล้ว');
+      };
+      const importJSON = (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const parsed = JSON.parse(ev.target.result);
+            if (!parsed.vehicle && !parsed.fuelLogs) throw new Error('รูปแบบไม่ถูกต้อง');
+            const merged = { ...structuredClone(DEFAULT_DATA), ...parsed, vehicle: { ...DEFAULT_DATA.vehicle, ...(parsed.vehicle || {}) }, settings: { ...DEFAULT_DATA.settings, ...(parsed.settings || {}) } };
+            setData(merged); showToast('นำเข้าข้อมูลสำเร็จ');
+          } catch (err) { alert('นำเข้าไม่สำเร็จ: ' + err.message); }
+        };
+        reader.readAsText(file); e.target.value = '';
+      };
+      const clearAll = () => { if (confirm('ลบข้อมูลทั้งหมด? (ควร Export สำรองก่อน)') && confirm('ยืนยันอีกครั้ง — กู้คืนไม่ได้')) { setData(structuredClone(DEFAULT_DATA)); showToast('ล้างข้อมูลแล้ว'); } };
+
+      const Toggle = ({ on, onClick }) => (
+        <button onClick={onClick} className={'press w-12 h-7 rounded-full transition relative flex-shrink-0 ' + (on ? 'bg-brand' : 'bg-white/15')}>
+          <div className={'absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all ' + (on ? 'left-[1.4rem]' : 'left-0.5')}></div>
+        </button>
+      );
+
+      return (
+        <div className="px-4 pt-safe">
+          <Header title="ข้อมูลรถ" subtitle="ตั้งค่า & ข้อมูลอ้างอิง" />
+
+          {/* Vehicle */}
+          <SectionLabel>ข้อมูลรถของฉัน</SectionLabel>
+          <Card className="p-4 space-y-3 mb-5">
+            <Field label="ชื่อเล่น"><TextInput value={veh.nickname || ''} onChange={v => setV('nickname', v)} placeholder="เจ้าฟ้า" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="ทะเบียน"><TextInput value={veh.plate || ''} onChange={v => setV('plate', v)} placeholder="กข 1234" /></Field>
+              <Field label="เลขไมล์ (กม.)"><NumInput value={String(veh.currentOdo || '')} onChange={v => setV('currentOdo', v)} /></Field>
+            </div>
+            <Field label="เลขเฟรม"><TextInput value={veh.frameNo || ''} onChange={v => setV('frameNo', v)} placeholder="MLEB5X..." /></Field>
+            <Field label="เลขเครื่อง"><TextInput value={veh.engineNo || ''} onChange={v => setV('engineNo', v)} placeholder="B5X-..." /></Field>
+            <Field label="วันจดทะเบียน"><DateInput value={veh.registerDate || ''} onChange={v => setV('registerDate', v)} /></Field>
+            <PrimaryBtn onClick={saveVeh}>บันทึกข้อมูลรถ</PrimaryBtn>
+          </Card>
+
+          {/* Settings */}
+          <SectionLabel>การแจ้งเตือน</SectionLabel>
+          <Card className="p-4 space-y-3 mb-5">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="เตือนล่วงหน้า (กม.)"><NumInput value={String(data.settings.warnAheadKm)} onChange={v => update(d => d.settings.warnAheadKm = parseFloat(v) || 0)} /></Field>
+              <Field label="เตือนล่วงหน้า (วัน)"><NumInput value={String(data.settings.warnAheadDays)} onChange={v => update(d => d.settings.warnAheadDays = parseFloat(v) || 0)} /></Field>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <div className="font-semibold text-[15px]">รายการ พ.ร.บ. / ภาษี / ประกัน</div>
+                <div className="text-[12px] text-slate-500">แสดงรายการต่ออายุประจำปี</div>
+              </div>
+              <Toggle on={data.settings.enableThaiItems} onClick={() => update(d => d.settings.enableThaiItems = !d.settings.enableThaiItems)} />
+            </div>
+          </Card>
+
+          {/* Reference data */}
+          <SectionLabel>ข้อมูลอ้างอิง (จากคู่มือ)</SectionLabel>
+          <Card className="p-4 mb-3">
+            <div className="font-bold mb-2 flex items-center gap-2">🛵 สเปครถ</div>
+            <RefRow k="รุ่น" v={REF.vehicle.model + ' · ' + REF.vehicle.code} />
+            <RefRow k="เครื่องยนต์" v={REF.vehicle.engine} />
+            <RefRow k="น้ำหนัก (รวมของเหลว)" v={REF.vehicle.length} />
+            <RefRow k="บรรทุกสูงสุด" v={REF.vehicle.payload} />
+            <RefRow k="ความสูงเบาะ" v={REF.vehicle.seat} />
+            <RefRow k="แบตเตอรี่" v={REF.vehicle.battery} />
+            <RefRow k="รหัสคู่มืออะไหล่" v={REF.vehicle.partbook} last />
+          </Card>
+          <Card className="p-4 mb-3">
+            <div className="font-bold mb-2 flex items-center gap-2">🛢️ ของเหลว / ความจุ</div>
+            {REF.fluids.map((f, i) => (
+              <div key={i} className={'py-2 ' + (i < REF.fluids.length - 1 ? 'border-b border-white/[0.06]' : '')}>
+                <div className="flex justify-between"><span className="font-semibold text-[14px]">{f.name}</span><span className="text-[13px] text-brand font-bold text-right">{f.amount}</span></div>
+                <div className="text-[12px] text-slate-500 mt-0.5">{f.spec}</div>
+              </div>
+            ))}
+          </Card>
+          <Card className="p-4 mb-3">
+            <div className="font-bold mb-2 flex items-center gap-2">🛞 ยาง & แรงดันลม</div>
+            {REF.tires.map((t, i) => (
+              <div key={i} className={'py-2 ' + (i < REF.tires.length - 1 ? 'border-b border-white/[0.06]' : '')}>
+                <div className="flex justify-between"><span className="font-semibold text-[14px]">{t.pos}: {t.size}</span><span className="text-[14px] text-emerald-300 font-bold">{t.psi}</span></div>
+                <div className="text-[12px] text-slate-500 mt-0.5">{t.brand}</div>
+              </div>
+            ))}
+          </Card>
+          <Card className="p-4 mb-5">
+            <div className="font-bold mb-2 flex items-center gap-2">💡 หลอดไฟ</div>
+            <div className="text-[13px] text-slate-400 leading-relaxed">{REF.bulbs}</div>
+          </Card>
+
+          {/* Data management */}
+          <SectionLabel>สำรองข้อมูล</SectionLabel>
+          <Card className="p-4 space-y-2.5 mb-5">
+            <div className="grid grid-cols-2 gap-3">
+              <GhostBtn onClick={exportJSON} className="text-center">⬇️ Export JSON</GhostBtn>
+              <GhostBtn onClick={() => fileRef.current.click()} className="text-center">⬆️ Import JSON</GhostBtn>
+            </div>
+            <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={importJSON} />
+            <div className="text-[12px] text-slate-500 px-1">💡 แนะนำ Export สำรองเป็นประจำ (Safari อาจล้างข้อมูลที่ไม่ได้ใช้นาน)</div>
+            <button onClick={clearAll} className="press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1">🗑️ ล้างข้อมูลทั้งหมด</button>
+          </Card>
+
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.0 · offline-first<br />ข้อมูลเก็บในเครื่องนี้เท่านั้น</div>
+        </div>
+      );
+    }
+
+    function RefRow({ k, v, last }) {
+      return <div className={'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')}><span className="text-[13px] text-slate-400 flex-shrink-0">{k}</span><span className="text-[13px] text-slate-200 text-right font-medium">{v}</span></div>;
+    }
+    function SectionLabel({ children }) {
+      return <div className="text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">{children}</div>;
+    }
+    function Header({ title, subtitle }) {
+      return (
+        <div className="pt-3 pb-4 sticky top-0 z-20">
+          <div className="text-[13px] text-slate-400 font-medium">{subtitle}</div>
+          <div className="text-3xl font-extrabold tracking-tight">{title}</div>
+        </div>
+      );
+    }
+    function EmptyState({ icon, title, sub }) {
+      return (
+        <Card className="p-8 text-center">
+          <div className="text-4xl mb-2">{icon}</div>
+          <div className="font-bold text-slate-300">{title}</div>
+          <div className="text-[13px] text-slate-500 mt-1">{sub}</div>
+        </Card>
+      );
+    }
+
+    try {
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    } catch (e) {
+      window.__xmaxErr && window.__xmaxErr('Render: ' + (e.message || e));
+    }
+  </script>
+
+  <script>
+    // ---- PWA: inline manifest via blob ----
+    (function () {
+      try {
+        const manifest = {
+          name: 'XMAX Logbook', short_name: 'XMAX', display: 'standalone', orientation: 'portrait',
+          background_color: '#070809', theme_color: '#0a0b0f', start_url: '.',
+          icons: [{
+            src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230a0b0f'/%3E%3Ctext x='50%25' y='54%25' font-size='240' font-family='Arial' font-weight='900' fill='%2338bdf8' text-anchor='middle' dominant-baseline='middle'%3EX%3C/text%3E%3C/svg%3E",
+            sizes: '512x512', type: 'image/svg+xml', purpose: 'any'
+          }]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const link = document.createElement('link');
+        link.rel = 'manifest'; link.href = URL.createObjectURL(blob);
+        document.head.appendChild(link);
+      } catch (e) {}
+    })();
+
+    // ---- Service worker (offline) via blob ----
+    if ('serviceWorker' in navigator) {
+      const swCode = `
+        const CACHE = 'xmax-v1';
+        self.addEventListener('install', e => self.skipWaiting());
+        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+        self.addEventListener('fetch', e => {
+          if (e.request.method !== 'GET') return;
+          e.respondWith(
+            caches.open(CACHE).then(cache =>
+              cache.match(e.request).then(cached => {
+                const net = fetch(e.request).then(resp => {
+                  if (resp && resp.status === 200) cache.put(e.request, resp.clone());
+                  return resp;
+                }).catch(() => cached);
+                return cached || net;
+              })
+            )
+          );
+        });
+      `;
+      try {
+        const url = URL.createObjectURL(new Blob([swCode], { type: 'text/javascript' }));
+        navigator.serviceWorker.register(url).catch(() => {});
+      } catch (e) {}
+    }
+  </script>
+</body>
+</html>

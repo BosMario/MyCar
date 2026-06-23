@@ -1,0 +1,7 @@
+# build vendor libs (re-fetched by build.mjs on demand)
+vendor/
+
+# os / editor
+.DS_Store
+*.log
+node_modules/
