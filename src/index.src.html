@@ -146,8 +146,11 @@
       maintenanceLogs: [],
       odoLogs: [],
       scheduleState: {},
-      settings: { currency: 'THB', distanceUnit: 'km', warnAheadKm: 300, warnAheadDays: 14, enableThaiItems: true },
+      settings: { currency: 'THB', distanceUnit: 'km', warnAheadKm: 300, warnAheadDays: 14, enableThaiItems: true, lastBackup: '', backupIntervalDays: 14 },
     };
+
+    const TANK_L = 13;        // ความจุถัง (ล.) จากคู่มือ
+    const RESERVE_L = 2.4;    // น้ำมันสำรอง (ล.)
 
     /* ============================== HELPERS ============================== */
     const uuid = () => 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -228,6 +231,63 @@
       return range > 0 ? (fuel + maint) / range : null;
     }
 
+    // ประเมินน้ำมันในถัง: อิงจากการเติมเต็มถังครั้งล่าสุด + ค่าเฉลี่ย กม./ล.
+    function estimateFuel(data, fuelStats) {
+      const avg = avgKmpl(fuelStats);
+      if (!avg) return null;
+      const fulls = data.fuelLogs.filter(f => f.isFull).sort((a, b) => a.odo - b.odo);
+      if (!fulls.length) return null;
+      const lastFull = fulls[fulls.length - 1];
+      const kmSince = (data.vehicle.currentOdo || 0) - lastFull.odo;
+      if (kmSince < 0) return null;
+      const usedL = kmSince / avg;
+      const remL = Math.max(0, TANK_L - usedL);
+      const remKm = remL * avg;
+      let level = 'ok';
+      if (remL <= RESERVE_L) level = 'overdue';
+      else if (remL <= RESERVE_L * 1.8) level = 'warn';
+      return { avg, kmSince, usedL, remL, remKm, level, fullRangeKm: TANK_L * avg };
+    }
+
+    // วันสำรองข้อมูลล่าสุด (จำนวนวันที่ผ่านมา) — null ถ้ายังไม่เคย backup
+    function daysSinceBackup(settings) {
+      if (!settings.lastBackup) return null;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      return diffDays(today, parseDate(settings.lastBackup));
+    }
+
+    // สร้างไฟล์ .ics (ปฏิทิน) จากรายการที่มีวันครบกำหนด
+    function buildICS(events) {
+      const pad = (n) => String(n).padStart(2, '0');
+      const dt = (s) => { const d = parseDate(s); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); };
+      const esc = (t) => String(t).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+      const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//XMAX Logbook//TH', 'CALSCALE:GREGORIAN'];
+      events.forEach((ev, i) => {
+        const start = dt(ev.date);
+        const d = parseDate(ev.date); d.setDate(d.getDate() + 1);
+        const end = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+        lines.push('BEGIN:VEVENT');
+        lines.push('UID:xmax-' + ev.key + '-' + start + '-' + i + '@xmax.logbook');
+        lines.push('DTSTART;VALUE=DATE:' + start);
+        lines.push('DTEND;VALUE=DATE:' + end);
+        lines.push('SUMMARY:' + esc('🛵 ' + ev.title));
+        if (ev.desc) lines.push('DESCRIPTION:' + esc(ev.desc));
+        lines.push('BEGIN:VALARM', 'TRIGGER:-P' + (ev.alarmDays || 7) + 'D', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(ev.title), 'END:VALARM');
+        lines.push('END:VEVENT');
+      });
+      lines.push('END:VCALENDAR');
+      return lines.join('\r\n');
+    }
+
+    function downloadFile(content, filename, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+
     /* ============================== UI PRIMITIVES ============================== */
     function Card({ className = '', children, glow }) {
       return <div className={'rounded-3xl border border-white/[0.06] bg-ink-800/60 ' + (glow ? 'ring-glow ' : '') + className}>{children}</div>;
@@ -302,7 +362,15 @@
       const update = useCallback((fn) => setData(d => { const n = structuredClone(d); fn(n); return n; }), []);
       const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); }, []);
 
-      const ctx = { data, update, setData, showToast };
+      const exportData = useCallback(() => {
+        setData(d => {
+          downloadFile(JSON.stringify(d, null, 2), 'xmax_logbook_' + todayStr() + '.json', 'application/json');
+          return { ...d, settings: { ...d.settings, lastBackup: todayStr() } };
+        });
+        showToast('สำรองข้อมูลแล้ว');
+      }, []);
+
+      const ctx = { data, update, setData, showToast, exportData };
 
       const tabs = [
         { id: 'home', icon: '🏠', label: 'หน้าหลัก' },
@@ -357,7 +425,7 @@
 
     /* ============================== HOME ============================== */
     function HomeScreen({ ctx, go }) {
-      const { data, update, showToast } = ctx;
+      const { data, update, showToast, exportData } = ctx;
       const [odoOpen, setOdoOpen] = useState(false);
       const [fuelOpen, setFuelOpen] = useState(false);
       const [maintOpen, setMaintOpen] = useState(false);
@@ -367,6 +435,9 @@
       const avg = avgKmpl(fuelStats);
       const lastFuel = [...data.fuelLogs].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
       const cpk = costPerKm(data);
+      const fuelEst = useMemo(() => estimateFuel(data, fuelStats), [data, fuelStats]);
+      const backupDays = daysSinceBackup(data.settings);
+      const backupDue = backupDays == null ? (data.fuelLogs.length + data.maintenanceLogs.length > 0) : backupDays >= data.settings.backupIntervalDays;
 
       const alerts = useMemo(() => activeSchedule(data.settings)
         .map(it => computeScheduleStatus(it, data))
@@ -395,6 +466,20 @@
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl">🛵</div>
           </div>
 
+          {/* Backup reminder */}
+          {backupDue && (
+            <div className="mb-3 anim-pop">
+              <div className="rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5 flex items-center gap-3">
+                <div className="text-xl">💾</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px] font-bold text-amber-200">ควรสำรองข้อมูล</div>
+                  <div className="text-[12px] text-amber-200/70">{backupDays == null ? 'ยังไม่เคยสำรอง — Safari อาจล้างข้อมูลได้' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน'}</div>
+                </div>
+                <button onClick={exportData} className="press px-3.5 py-2 rounded-xl bg-amber-400/20 border border-amber-400/30 text-amber-100 text-[13px] font-bold flex-shrink-0">Export</button>
+              </div>
+            </div>
+          )}
+
           {/* ODO Hero */}
           <Card glow className="overflow-hidden anim-pop">
             <div className="relative p-5">
@@ -418,6 +503,35 @@
             <MiniStat label="ราคาเติมล่าสุด" value={lastFuel ? fmt(lastFuel.pricePerL, 2) : '–'} unit="฿/ล." accent="text-cyan-300" />
             <MiniStat label="ต้นทุน/กม." value={cpk ? fmt(cpk, 2) : '–'} unit="฿/กม." accent="text-emerald-300" />
           </div>
+
+          {/* Fuel range estimate */}
+          {fuelEst && (
+            <Card className={'p-4 mt-3 ' + (fuelEst.level === 'overdue' ? 'ring-1 ring-rose-500/40' : fuelEst.level === 'warn' ? 'ring-1 ring-amber-400/40' : '')}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2"><span className="text-lg">⛽</span><span className="font-bold text-[15px]">น้ำมันคงเหลือ (ประมาณ)</span></div>
+                {fuelEst.level === 'overdue' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold">ใกล้หมด!</span>}
+                {fuelEst.level === 'warn' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-bold">ควรเติม</span>}
+              </div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className={'text-4xl font-black num ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-brand')}>{fmt(fuelEst.remKm)}</span>
+                    <span className="text-slate-400 font-semibold">กม.</span>
+                  </div>
+                  <div className="text-[12px] text-slate-500 mt-0.5 num">เหลือ ~{fmt(fuelEst.remL, 1)} ล. จาก {TANK_L} ล.</div>
+                </div>
+                <div className="text-right text-[11px] text-slate-500">
+                  <div>วิ่งมาแล้ว {fmt(fuelEst.kmSince)} กม.</div>
+                  <div>ตั้งแต่เติมเต็มถัง</div>
+                </div>
+              </div>
+              {/* fuel bar */}
+              <div className="mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                <div className={'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300')} style={{ width: Math.max(2, Math.min(100, (fuelEst.remL / TANK_L) * 100)) + '%' }}></div>
+              </div>
+              <div className="text-[11px] text-slate-600 mt-1.5">* ประเมินคร่าวๆ จากค่าเฉลี่ย {fmt(fuelEst.avg, 1)} กม./ล. — ใช้อ้างอิงเท่านั้น</div>
+            </Card>
+          )}
 
           {/* Actions */}
           <div className="grid grid-cols-2 gap-3 mt-3">
@@ -846,6 +960,7 @@
       const monthly = Object.keys(monthMap).sort().slice(-6).map(k => ({ name: thMonthYear(k + '-01').replace(' 25', ' '), 'น้ำมัน': Math.round(monthMap[k].fuel), 'ซ่อมบำรุง': Math.round(monthMap[k].maint) }));
 
       const effData = fuelStats.filter(f => f.kmpl != null).map(f => ({ name: thDate(f.date).slice(0, 6), value: +f.kmpl.toFixed(2) }));
+      const priceData = [...data.fuelLogs].filter(f => f.pricePerL > 0).sort((a, b) => (a.date < b.date ? -1 : 1)).map(f => ({ name: thDate(f.date).slice(0, 6), value: +Number(f.pricePerL).toFixed(2) }));
 
       return (
         <div className="px-4 pt-safe">
@@ -867,11 +982,59 @@
             {monthly.length ? <BarChart data={monthly} /> : <ChartEmpty />}
           </Card>
 
-          <Card className="p-4">
+          <Card className="p-4 mb-3">
             <div className="font-bold mb-3">อัตราสิ้นเปลือง (กม./ลิตร)</div>
             {effData.length >= 2 ? <LineChart data={effData} /> : <ChartEmpty msg="ต้องเติมเต็มถังอย่างน้อย 2 ครั้ง" />}
           </Card>
+
+          <Card className="p-4 mb-3">
+            <div className="font-bold mb-3">ราคาน้ำมันที่เติม (฿/ลิตร)</div>
+            {priceData.length >= 2 ? <LineChart data={priceData} color="#34d399" /> : <ChartEmpty msg="ต้องเติมน้ำมันอย่างน้อย 2 ครั้ง" />}
+          </Card>
+
+          <TripCalc data={data} fuelStats={fuelStats} />
         </div>
+      );
+    }
+
+    function TripCalc({ data, fuelStats }) {
+      const [dist, setDist] = useState('');
+      const avg = avgKmpl(fuelStats);
+      const lastFuel = [...data.fuelLogs].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+      const price = lastFuel && lastFuel.pricePerL > 0 ? lastFuel.pricePerL : null;
+      const cpkFuel = useMemo(() => {
+        const fuel = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
+        const odos = data.fuelLogs.map(f => f.odo).filter(x => x > 0);
+        const range = odos.length ? (data.vehicle.currentOdo - Math.min(...odos)) : 0;
+        return range > 0 ? fuel / range : null;
+      }, [data]);
+      const d = parseFloat(dist);
+      const liters = (avg && d > 0) ? d / avg : null;
+      const costByFill = (price && liters != null) ? liters * price : null;
+      const costByAvg = (cpkFuel && d > 0) ? cpkFuel * d : null;
+
+      return (
+        <Card className="p-4">
+          <div className="font-bold mb-1">🧮 คำนวณค่าน้ำมันทริป</div>
+          <div className="text-[12px] text-slate-500 mb-3">ใส่ระยะทางที่จะไป ระบบประเมินค่าน้ำมันให้</div>
+          <Field label="ระยะทาง (กม.)"><NumInput value={dist} onChange={setDist} placeholder="เช่น 250" /></Field>
+          {!avg && <div className="text-[12px] text-amber-300/80 mt-2">ต้องมีข้อมูลเติมเต็มถัง 2 ครั้งก่อน เพื่อหาค่าเฉลี่ย</div>}
+          {avg && d > 0 && (
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <div className="rounded-2xl bg-brand/10 border border-brand/20 p-3.5">
+                <div className="text-[12px] text-slate-400">น้ำมันที่ใช้</div>
+                <div className="text-2xl font-black num text-brand">{fmt(liters, 1)}<span className="text-sm text-slate-400 font-semibold"> ล.</span></div>
+              </div>
+              <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3.5">
+                <div className="text-[12px] text-slate-400">ค่าน้ำมันประมาณ</div>
+                <div className="text-2xl font-black num text-emerald-300">{baht(costByFill != null ? costByFill : costByAvg)}</div>
+              </div>
+              <div className="col-span-2 text-[11px] text-slate-600">
+                * อิงเฉลี่ย {fmt(avg, 1)} กม./ล.{price ? ' · ราคา ' + fmt(price, 2) + ' ฿/ล. (เติมล่าสุด)' : (cpkFuel ? ' · ต้นทุนน้ำมัน ' + fmt(cpkFuel, 2) + ' ฿/กม.' : '')}
+              </div>
+            </div>
+          )}
+        </Card>
       );
     }
 
@@ -910,8 +1073,9 @@
       );
     }
 
-    function LineChart({ data }) {
+    function LineChart({ data, color = '#38bdf8' }) {
       const W = 320, H = 190, padL = 34, padB = 24, padT = 12, padR = 8;
+      const gid = 'lg' + color.replace('#', '');
       const vals = data.map(d => d.value);
       const min = Math.min(...vals), max = Math.max(...vals);
       const lo = Math.floor(min - 2), hi = Math.ceil(max + 2), span = Math.max(1, hi - lo);
@@ -924,9 +1088,9 @@
       return (
         <svg viewBox={'0 0 ' + W + ' ' + H} width="100%" height={H} style={{ overflow: 'visible' }}>
           <defs>
-            <linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
             </linearGradient>
           </defs>
           {Array.from({ length: ticks + 1 }).map((_, i) => {
@@ -938,11 +1102,11 @@
               </g>
             );
           })}
-          <path d={area} fill="url(#lg)" />
-          <polyline points={pts.join(' ')} fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          <path d={area} fill={'url(#' + gid + ')'} />
+          <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
           {data.map((d, i) => (
             <g key={i}>
-              <circle cx={x(i)} cy={y(d.value)} r="3.5" fill="#38bdf8" stroke="#0a0b0f" strokeWidth="1.5" />
+              <circle cx={x(i)} cy={y(d.value)} r="3.5" fill={color} stroke="#0a0b0f" strokeWidth="1.5" />
               {(i === 0 || i === data.length - 1 || data.length <= 6) && <text x={x(i)} y={H - 6} fontSize="9" fill="#94a3b8" textAnchor="middle">{d.name}</text>}
             </g>
           ))}
@@ -974,22 +1138,23 @@
 
     /* ============================== INFO / SETTINGS ============================== */
     function InfoScreen({ ctx }) {
-      const { data, update, setData, showToast } = ctx;
+      const { data, update, setData, showToast, exportData } = ctx;
       const [veh, setVeh] = useState(data.vehicle);
       const fileRef = useRef(null);
       useEffect(() => { setVeh(data.vehicle); }, [data.vehicle]);
 
       const saveVeh = () => { update(d => { d.vehicle = { ...d.vehicle, ...veh, currentOdo: parseFloat(veh.currentOdo) || 0 }; }); showToast('บันทึกข้อมูลรถแล้ว'); };
       const setV = (k, v) => setVeh(p => ({ ...p, [k]: v }));
+      const bDays = daysSinceBackup(data.settings);
 
-      const exportJSON = () => {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'xmax_logbook_' + todayStr() + '.json';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        showToast('ส่งออกไฟล์แล้ว');
+      const exportICS = () => {
+        const events = activeSchedule(data.settings)
+          .map(it => computeScheduleStatus(it, data))
+          .filter(s => s.nextDateStr)
+          .map(s => ({ key: s.key, title: s.title, date: s.nextDateStr, alarmDays: data.settings.warnAheadDays, desc: (s.spec || '') + (s.nextOdo ? ' · ครบที่ ' + fmt(s.nextOdo) + ' กม.' : '') }));
+        if (!events.length) { alert('ยังไม่มีรายการที่มีวันครบกำหนด\n(บันทึกการทำรายการที่นับเป็น "เดือน/ปี" ก่อน เช่น น้ำมันเบรค พ.ร.บ. ภาษี)'); return; }
+        downloadFile(buildICS(events), 'xmax_reminders_' + todayStr() + '.ics', 'text/calendar');
+        showToast('ส่งออกปฏิทิน ' + events.length + ' รายการ');
       };
       const importJSON = (e) => {
         const file = e.target.files[0]; if (!file) return;
@@ -1081,19 +1246,30 @@
             <div className="text-[13px] text-slate-400 leading-relaxed">{REF.bulbs}</div>
           </Card>
 
+          {/* Calendar */}
+          <SectionLabel>ปฏิทินเตือน</SectionLabel>
+          <Card className="p-4 mb-5">
+            <GhostBtn onClick={exportICS} className="w-full text-center">📅 เพิ่มลงปฏิทิน iPhone (.ics)</GhostBtn>
+            <div className="text-[12px] text-slate-500 px-1 mt-2.5">สร้างไฟล์ปฏิทินสำหรับรายการที่มีวันครบกำหนด (พ.ร.บ. ภาษี ประกัน น้ำมันเบรค ฯลฯ) พร้อมตั้งเตือนล่วงหน้า {data.settings.warnAheadDays} วัน — เปิดไฟล์แล้วกด "เพิ่ม" เข้าปฏิทิน</div>
+          </Card>
+
           {/* Data management */}
           <SectionLabel>สำรองข้อมูล</SectionLabel>
           <Card className="p-4 space-y-2.5 mb-5">
             <div className="grid grid-cols-2 gap-3">
-              <GhostBtn onClick={exportJSON} className="text-center">⬇️ Export JSON</GhostBtn>
+              <GhostBtn onClick={exportData} className="text-center">⬇️ Export JSON</GhostBtn>
               <GhostBtn onClick={() => fileRef.current.click()} className="text-center">⬆️ Import JSON</GhostBtn>
             </div>
             <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={importJSON} />
+            <div className={'text-[12px] px-1 ' + (bDays != null && bDays <= data.settings.backupIntervalDays ? 'text-emerald-300/80' : 'text-amber-300/80')}>
+              {bDays == null ? '⚠️ ยังไม่เคยสำรองข้อมูล' : '💾 สำรองล่าสุด: ' + thDate(data.settings.lastBackup) + ' (' + bDays + ' วันก่อน)'}
+            </div>
+            <Field label="เตือนสำรองข้อมูลทุก (วัน)"><NumInput value={String(data.settings.backupIntervalDays)} onChange={v => update(d => d.settings.backupIntervalDays = parseFloat(v) || 14)} /></Field>
             <div className="text-[12px] text-slate-500 px-1">💡 แนะนำ Export สำรองเป็นประจำ (Safari อาจล้างข้อมูลที่ไม่ได้ใช้นาน)</div>
             <button onClick={clearAll} className="press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1">🗑️ ล้างข้อมูลทั้งหมด</button>
           </Card>
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.0 · offline-first<br />ข้อมูลเก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.1 · offline-first<br />ข้อมูลเก็บในเครื่องนี้เท่านั้น</div>
         </div>
       );
     }

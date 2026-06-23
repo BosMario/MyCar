@@ -694,9 +694,13 @@ const DEFAULT_DATA = {
     distanceUnit: 'km',
     warnAheadKm: 300,
     warnAheadDays: 14,
-    enableThaiItems: true
+    enableThaiItems: true,
+    lastBackup: '',
+    backupIntervalDays: 14
   }
 };
+const TANK_L = 13; // ความจุถัง (ล.) จากคู่มือ
+const RESERVE_L = 2.4; // น้ำมันสำรอง (ล.)
 
 /* ============================== HELPERS ============================== */
 const uuid = () => 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -855,6 +859,79 @@ function costPerKm(data) {
   const odos = data.fuelLogs.map(f => f.odo).concat(data.maintenanceLogs.map(m => m.odo)).concat(data.odoLogs.map(o => o.odo)).filter(x => x > 0);
   const range = odos.length ? data.vehicle.currentOdo - Math.min(...odos) : 0;
   return range > 0 ? (fuel + maint) / range : null;
+}
+
+// ประเมินน้ำมันในถัง: อิงจากการเติมเต็มถังครั้งล่าสุด + ค่าเฉลี่ย กม./ล.
+function estimateFuel(data, fuelStats) {
+  const avg = avgKmpl(fuelStats);
+  if (!avg) return null;
+  const fulls = data.fuelLogs.filter(f => f.isFull).sort((a, b) => a.odo - b.odo);
+  if (!fulls.length) return null;
+  const lastFull = fulls[fulls.length - 1];
+  const kmSince = (data.vehicle.currentOdo || 0) - lastFull.odo;
+  if (kmSince < 0) return null;
+  const usedL = kmSince / avg;
+  const remL = Math.max(0, TANK_L - usedL);
+  const remKm = remL * avg;
+  let level = 'ok';
+  if (remL <= RESERVE_L) level = 'overdue';else if (remL <= RESERVE_L * 1.8) level = 'warn';
+  return {
+    avg,
+    kmSince,
+    usedL,
+    remL,
+    remKm,
+    level,
+    fullRangeKm: TANK_L * avg
+  };
+}
+
+// วันสำรองข้อมูลล่าสุด (จำนวนวันที่ผ่านมา) — null ถ้ายังไม่เคย backup
+function daysSinceBackup(settings) {
+  if (!settings.lastBackup) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return diffDays(today, parseDate(settings.lastBackup));
+}
+
+// สร้างไฟล์ .ics (ปฏิทิน) จากรายการที่มีวันครบกำหนด
+function buildICS(events) {
+  const pad = n => String(n).padStart(2, '0');
+  const dt = s => {
+    const d = parseDate(s);
+    return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+  };
+  const esc = t => String(t).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//XMAX Logbook//TH', 'CALSCALE:GREGORIAN'];
+  events.forEach((ev, i) => {
+    const start = dt(ev.date);
+    const d = parseDate(ev.date);
+    d.setDate(d.getDate() + 1);
+    const end = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:xmax-' + ev.key + '-' + start + '-' + i + '@xmax.logbook');
+    lines.push('DTSTART;VALUE=DATE:' + start);
+    lines.push('DTEND;VALUE=DATE:' + end);
+    lines.push('SUMMARY:' + esc('🛵 ' + ev.title));
+    if (ev.desc) lines.push('DESCRIPTION:' + esc(ev.desc));
+    lines.push('BEGIN:VALARM', 'TRIGGER:-P' + (ev.alarmDays || 7) + 'D', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(ev.title), 'END:VALARM');
+    lines.push('END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+function downloadFile(content, filename, mime) {
+  const blob = new Blob([content], {
+    type: mime
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 /* ============================== UI PRIMITIVES ============================== */
@@ -1031,11 +1108,25 @@ function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 2200);
   }, []);
+  const exportData = useCallback(() => {
+    setData(d => {
+      downloadFile(JSON.stringify(d, null, 2), 'xmax_logbook_' + todayStr() + '.json', 'application/json');
+      return {
+        ...d,
+        settings: {
+          ...d.settings,
+          lastBackup: todayStr()
+        }
+      };
+    });
+    showToast('สำรองข้อมูลแล้ว');
+  }, []);
   const ctx = {
     data,
     update,
     setData,
-    showToast
+    showToast,
+    exportData
   };
   const tabs = [{
     id: 'home',
@@ -1116,7 +1207,8 @@ function HomeScreen(_ref7) {
   const {
     data,
     update,
-    showToast
+    showToast,
+    exportData
   } = ctx;
   const [odoOpen, setOdoOpen] = useState(false);
   const [fuelOpen, setFuelOpen] = useState(false);
@@ -1126,6 +1218,9 @@ function HomeScreen(_ref7) {
   const avg = avgKmpl(fuelStats);
   const lastFuel = [...data.fuelLogs].sort((a, b) => a.date < b.date ? 1 : -1)[0];
   const cpk = costPerKm(data);
+  const fuelEst = useMemo(() => estimateFuel(data, fuelStats), [data, fuelStats]);
+  const backupDays = daysSinceBackup(data.settings);
+  const backupDue = backupDays == null ? data.fuelLogs.length + data.maintenanceLogs.length > 0 : backupDays >= data.settings.backupIntervalDays;
   const alerts = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)).filter(s => s.level === 'overdue' || s.level === 'warn').sort((a, b) => {
     const order = {
       overdue: 0,
@@ -1163,7 +1258,22 @@ function HomeScreen(_ref7) {
     className: "text-2xl font-extrabold tracking-tight"
   }, "XMAX Logbook")), /*#__PURE__*/React.createElement("div", {
     className: "w-11 h-11 rounded-2xl bg-gradient-to-br from-brand/30 to-cyan-400/10 border border-brand/30 flex items-center justify-center text-xl"
-  }, "\uD83D\uDEF5")), /*#__PURE__*/React.createElement(Card, {
+  }, "\uD83D\uDEF5")), backupDue && /*#__PURE__*/React.createElement("div", {
+    className: "mb-3 anim-pop"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-amber-400/10 border border-amber-400/25 p-3.5 flex items-center gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-xl"
+  }, "\uD83D\uDCBE"), /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 min-w-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[14px] font-bold text-amber-200"
+  }, "\u0E04\u0E27\u0E23\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-amber-200/70"
+  }, backupDays == null ? 'ยังไม่เคยสำรอง — Safari อาจล้างข้อมูลได้' : 'สำรองล่าสุด ' + backupDays + ' วันก่อน')), /*#__PURE__*/React.createElement("button", {
+    onClick: exportData,
+    className: "press px-3.5 py-2 rounded-xl bg-amber-400/20 border border-amber-400/30 text-amber-100 text-[13px] font-bold flex-shrink-0"
+  }, "Export"))), /*#__PURE__*/React.createElement(Card, {
     glow: true,
     className: "overflow-hidden anim-pop"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1200,7 +1310,42 @@ function HomeScreen(_ref7) {
     value: cpk ? fmt(cpk, 2) : '–',
     unit: "\u0E3F/\u0E01\u0E21.",
     accent: "text-emerald-300"
+  })), fuelEst && /*#__PURE__*/React.createElement(Card, {
+    className: 'p-4 mt-3 ' + (fuelEst.level === 'overdue' ? 'ring-1 ring-rose-500/40' : fuelEst.level === 'warn' ? 'ring-1 ring-amber-400/40' : '')
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-lg"
+  }, "\u26FD"), /*#__PURE__*/React.createElement("span", {
+    className: "font-bold text-[15px]"
+  }, "\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D (\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13)")), fuelEst.level === 'overdue' && /*#__PURE__*/React.createElement("span", {
+    className: "text-[11px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold"
+  }, "\u0E43\u0E01\u0E25\u0E49\u0E2B\u0E21\u0E14!"), fuelEst.level === 'warn' && /*#__PURE__*/React.createElement("span", {
+    className: "text-[11px] px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-200 font-bold"
+  }, "\u0E04\u0E27\u0E23\u0E40\u0E15\u0E34\u0E21")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-end justify-between"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline gap-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: 'text-4xl font-black num ' + (fuelEst.level === 'overdue' ? 'text-rose-400' : fuelEst.level === 'warn' ? 'text-amber-300' : 'text-brand')
+  }, fmt(fuelEst.remKm)), /*#__PURE__*/React.createElement("span", {
+    className: "text-slate-400 font-semibold"
+  }, "\u0E01\u0E21.")), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 mt-0.5 num"
+  }, "\u0E40\u0E2B\u0E25\u0E37\u0E2D ~", fmt(fuelEst.remL, 1), " \u0E25. \u0E08\u0E32\u0E01 ", TANK_L, " \u0E25.")), /*#__PURE__*/React.createElement("div", {
+    className: "text-right text-[11px] text-slate-500"
+  }, /*#__PURE__*/React.createElement("div", null, "\u0E27\u0E34\u0E48\u0E07\u0E21\u0E32\u0E41\u0E25\u0E49\u0E27 ", fmt(fuelEst.kmSince), " \u0E01\u0E21."), /*#__PURE__*/React.createElement("div", null, "\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E40\u0E15\u0E34\u0E21\u0E40\u0E15\u0E47\u0E21\u0E16\u0E31\u0E07"))), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 h-2.5 rounded-full bg-white/10 overflow-hidden"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: 'h-full rounded-full transition-all ' + (fuelEst.level === 'overdue' ? 'bg-rose-500' : fuelEst.level === 'warn' ? 'bg-amber-400' : 'bg-gradient-to-r from-brand to-cyan-300'),
+    style: {
+      width: Math.max(2, Math.min(100, fuelEst.remL / TANK_L * 100)) + '%'
+    }
   })), /*#__PURE__*/React.createElement("div", {
+    className: "text-[11px] text-slate-600 mt-1.5"
+  }, "* \u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E04\u0E23\u0E48\u0E32\u0E27\u0E46 \u0E08\u0E32\u0E01\u0E04\u0E48\u0E32\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22 ", fmt(fuelEst.avg, 1), " \u0E01\u0E21./\u0E25. \u2014 \u0E43\u0E0A\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19")), /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3 mt-3"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setFuelOpen(true),
@@ -2005,6 +2150,10 @@ function ReportScreen(_ref14) {
     name: thDate(f.date).slice(0, 6),
     value: +f.kmpl.toFixed(2)
   }));
+  const priceData = [...data.fuelLogs].filter(f => f.pricePerL > 0).sort((a, b) => a.date < b.date ? -1 : 1).map(f => ({
+    name: thDate(f.date).slice(0, 6),
+    value: +Number(f.pricePerL).toFixed(2)
+  }));
   return /*#__PURE__*/React.createElement("div", {
     className: "px-4 pt-safe"
   }, /*#__PURE__*/React.createElement(Header, {
@@ -2053,21 +2202,86 @@ function ReportScreen(_ref14) {
   }, "\u0E0B\u0E48\u0E2D\u0E21\u0E1A\u0E33\u0E23\u0E38\u0E07"))), monthly.length ? /*#__PURE__*/React.createElement(BarChart, {
     data: monthly
   }) : /*#__PURE__*/React.createElement(ChartEmpty, null)), /*#__PURE__*/React.createElement(Card, {
-    className: "p-4"
+    className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-3"
   }, "\u0E2D\u0E31\u0E15\u0E23\u0E32\u0E2A\u0E34\u0E49\u0E19\u0E40\u0E1B\u0E25\u0E37\u0E2D\u0E07 (\u0E01\u0E21./\u0E25\u0E34\u0E15\u0E23)"), effData.length >= 2 ? /*#__PURE__*/React.createElement(LineChart, {
     data: effData
   }) : /*#__PURE__*/React.createElement(ChartEmpty, {
     msg: "\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E15\u0E34\u0E21\u0E40\u0E15\u0E47\u0E21\u0E16\u0E31\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 2 \u0E04\u0E23\u0E31\u0E49\u0E07"
-  })));
+  })), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-3"
+  }, "\u0E23\u0E32\u0E04\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E17\u0E35\u0E48\u0E40\u0E15\u0E34\u0E21 (\u0E3F/\u0E25\u0E34\u0E15\u0E23)"), priceData.length >= 2 ? /*#__PURE__*/React.createElement(LineChart, {
+    data: priceData,
+    color: "#34d399"
+  }) : /*#__PURE__*/React.createElement(ChartEmpty, {
+    msg: "\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E15\u0E34\u0E21\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 2 \u0E04\u0E23\u0E31\u0E49\u0E07"
+  })), /*#__PURE__*/React.createElement(TripCalc, {
+    data: data,
+    fuelStats: fuelStats
+  }));
+}
+function TripCalc(_ref15) {
+  let {
+    data,
+    fuelStats
+  } = _ref15;
+  const [dist, setDist] = useState('');
+  const avg = avgKmpl(fuelStats);
+  const lastFuel = [...data.fuelLogs].sort((a, b) => a.date < b.date ? 1 : -1)[0];
+  const price = lastFuel && lastFuel.pricePerL > 0 ? lastFuel.pricePerL : null;
+  const cpkFuel = useMemo(() => {
+    const fuel = data.fuelLogs.reduce((s, f) => s + Number(f.totalCost || 0), 0);
+    const odos = data.fuelLogs.map(f => f.odo).filter(x => x > 0);
+    const range = odos.length ? data.vehicle.currentOdo - Math.min(...odos) : 0;
+    return range > 0 ? fuel / range : null;
+  }, [data]);
+  const d = parseFloat(dist);
+  const liters = avg && d > 0 ? d / avg : null;
+  const costByFill = price && liters != null ? liters * price : null;
+  const costByAvg = cpkFuel && d > 0 ? cpkFuel * d : null;
+  return /*#__PURE__*/React.createElement(Card, {
+    className: "p-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-1"
+  }, "\uD83E\uDDEE \u0E04\u0E33\u0E19\u0E27\u0E13\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E17\u0E23\u0E34\u0E1B"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 mb-3"
+  }, "\u0E43\u0E2A\u0E48\u0E23\u0E30\u0E22\u0E30\u0E17\u0E32\u0E07\u0E17\u0E35\u0E48\u0E08\u0E30\u0E44\u0E1B \u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E43\u0E2B\u0E49"), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E23\u0E30\u0E22\u0E30\u0E17\u0E32\u0E07 (\u0E01\u0E21.)"
+  }, /*#__PURE__*/React.createElement(NumInput, {
+    value: dist,
+    onChange: setDist,
+    placeholder: "\u0E40\u0E0A\u0E48\u0E19 250"
+  })), !avg && /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-amber-300/80 mt-2"
+  }, "\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E15\u0E34\u0E21\u0E40\u0E15\u0E47\u0E21\u0E16\u0E31\u0E07 2 \u0E04\u0E23\u0E31\u0E49\u0E07\u0E01\u0E48\u0E2D\u0E19 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E04\u0E48\u0E32\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22"), avg && d > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3 mt-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-brand/10 border border-brand/20 p-3.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400"
+  }, "\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49"), /*#__PURE__*/React.createElement("div", {
+    className: "text-2xl font-black num text-brand"
+  }, fmt(liters, 1), /*#__PURE__*/React.createElement("span", {
+    className: "text-sm text-slate-400 font-semibold"
+  }, " \u0E25."))), /*#__PURE__*/React.createElement("div", {
+    className: "rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400"
+  }, "\u0E04\u0E48\u0E32\u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13"), /*#__PURE__*/React.createElement("div", {
+    className: "text-2xl font-black num text-emerald-300"
+  }, baht(costByFill != null ? costByFill : costByAvg))), /*#__PURE__*/React.createElement("div", {
+    className: "col-span-2 text-[11px] text-slate-600"
+  }, "* \u0E2D\u0E34\u0E07\u0E40\u0E09\u0E25\u0E35\u0E48\u0E22 ", fmt(avg, 1), " \u0E01\u0E21./\u0E25.", price ? ' · ราคา ' + fmt(price, 2) + ' ฿/ล. (เติมล่าสุด)' : cpkFuel ? ' · ต้นทุนน้ำมัน ' + fmt(cpkFuel, 2) + ' ฿/กม.' : '')));
 }
 
 /* ---- Custom SVG charts (offline, no deps) ---- */
-function BarChart(_ref15) {
+function BarChart(_ref16) {
   let {
     data
-  } = _ref15;
+  } = _ref16;
   const W = 320,
     H = 200,
     padL = 34,
@@ -2135,16 +2349,18 @@ function BarChart(_ref15) {
     }, d.name));
   }));
 }
-function LineChart(_ref16) {
+function LineChart(_ref17) {
   let {
-    data
-  } = _ref16;
+    data,
+    color = '#38bdf8'
+  } = _ref17;
   const W = 320,
     H = 190,
     padL = 34,
     padB = 24,
     padT = 12,
     padR = 8;
+  const gid = 'lg' + color.replace('#', '');
   const vals = data.map(d => d.value);
   const min = Math.min(...vals),
     max = Math.max(...vals);
@@ -2166,18 +2382,18 @@ function LineChart(_ref16) {
       overflow: 'visible'
     }
   }, /*#__PURE__*/React.createElement("defs", null, /*#__PURE__*/React.createElement("linearGradient", {
-    id: "lg",
+    id: gid,
     x1: "0",
     y1: "0",
     x2: "0",
     y2: "1"
   }, /*#__PURE__*/React.createElement("stop", {
     offset: "0%",
-    stopColor: "#38bdf8",
+    stopColor: color,
     stopOpacity: "0.35"
   }), /*#__PURE__*/React.createElement("stop", {
     offset: "100%",
-    stopColor: "#38bdf8",
+    stopColor: color,
     stopOpacity: "0"
   }))), Array.from({
     length: ticks + 1
@@ -2201,11 +2417,11 @@ function LineChart(_ref16) {
     }, v.toFixed(0)));
   }), /*#__PURE__*/React.createElement("path", {
     d: area,
-    fill: "url(#lg)"
+    fill: 'url(#' + gid + ')'
   }), /*#__PURE__*/React.createElement("polyline", {
     points: pts.join(' '),
     fill: "none",
-    stroke: "#38bdf8",
+    stroke: color,
     strokeWidth: "2.5",
     strokeLinejoin: "round",
     strokeLinecap: "round"
@@ -2215,7 +2431,7 @@ function LineChart(_ref16) {
     cx: x(i),
     cy: y(d.value),
     r: "3.5",
-    fill: "#38bdf8",
+    fill: color,
     stroke: "#0a0b0f",
     strokeWidth: "1.5"
   }), (i === 0 || i === data.length - 1 || data.length <= 6) && /*#__PURE__*/React.createElement("text", {
@@ -2236,13 +2452,13 @@ function niceCeil(v) {
 function kFmt(v) {
   return v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'k' : String(Math.round(v));
 }
-function BigStat(_ref17) {
+function BigStat(_ref18) {
   let {
     label,
     value,
     icon,
     accent
-  } = _ref17;
+  } = _ref18;
   return /*#__PURE__*/React.createElement("div", {
     className: 'rounded-3xl p-4 bg-gradient-to-br border ' + accent
   }, /*#__PURE__*/React.createElement("div", {
@@ -2253,10 +2469,10 @@ function BigStat(_ref17) {
     className: "text-xl font-black num mt-0.5"
   }, value));
 }
-function ChartEmpty(_ref18) {
+function ChartEmpty(_ref19) {
   let {
     msg
-  } = _ref18;
+  } = _ref19;
   return /*#__PURE__*/React.createElement("div", {
     className: "h-[180px] flex flex-col items-center justify-center text-slate-600"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2267,15 +2483,16 @@ function ChartEmpty(_ref18) {
 }
 
 /* ============================== INFO / SETTINGS ============================== */
-function InfoScreen(_ref19) {
+function InfoScreen(_ref20) {
   let {
     ctx
-  } = _ref19;
+  } = _ref20;
   const {
     data,
     update,
     setData,
-    showToast
+    showToast,
+    exportData
   } = ctx;
   const [veh, setVeh] = useState(data.vehicle);
   const fileRef = useRef(null);
@@ -2296,19 +2513,21 @@ function InfoScreen(_ref19) {
     ...p,
     [k]: v
   }));
-  const exportJSON = () => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'xmax_logbook_' + todayStr() + '.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showToast('ส่งออกไฟล์แล้ว');
+  const bDays = daysSinceBackup(data.settings);
+  const exportICS = () => {
+    const events = activeSchedule(data.settings).map(it => computeScheduleStatus(it, data)).filter(s => s.nextDateStr).map(s => ({
+      key: s.key,
+      title: s.title,
+      date: s.nextDateStr,
+      alarmDays: data.settings.warnAheadDays,
+      desc: (s.spec || '') + (s.nextOdo ? ' · ครบที่ ' + fmt(s.nextOdo) + ' กม.' : '')
+    }));
+    if (!events.length) {
+      alert('ยังไม่มีรายการที่มีวันครบกำหนด\n(บันทึกการทำรายการที่นับเป็น "เดือน/ปี" ก่อน เช่น น้ำมันเบรค พ.ร.บ. ภาษี)');
+      return;
+    }
+    downloadFile(buildICS(events), 'xmax_reminders_' + todayStr() + '.ics', 'text/calendar');
+    showToast('ส่งออกปฏิทิน ' + events.length + ' รายการ');
   };
   const importJSON = e => {
     const file = e.target.files[0];
@@ -2345,11 +2564,11 @@ function InfoScreen(_ref19) {
       showToast('ล้างข้อมูลแล้ว');
     }
   };
-  const Toggle = _ref20 => {
+  const Toggle = _ref21 => {
     let {
       on,
       onClick
-    } = _ref20;
+    } = _ref21;
     return /*#__PURE__*/React.createElement("button", {
       onClick: onClick,
       className: 'press w-12 h-7 rounded-full transition relative flex-shrink-0 ' + (on ? 'bg-brand' : 'bg-white/15')
@@ -2487,12 +2706,19 @@ function InfoScreen(_ref19) {
     className: "font-bold mb-2 flex items-center gap-2"
   }, "\uD83D\uDCA1 \u0E2B\u0E25\u0E2D\u0E14\u0E44\u0E1F"), /*#__PURE__*/React.createElement("div", {
     className: "text-[13px] text-slate-400 leading-relaxed"
-  }, REF.bulbs)), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /*#__PURE__*/React.createElement(Card, {
+  }, REF.bulbs)), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\u0E40\u0E15\u0E37\u0E2D\u0E19"), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-5"
+  }, /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: exportICS,
+    className: "w-full text-center"
+  }, "\uD83D\uDCC5 \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 iPhone (.ics)"), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 px-1 mt-2.5"
+  }, "\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E21\u0E35\u0E27\u0E31\u0E19\u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14 (\u0E1E.\u0E23.\u0E1A. \u0E20\u0E32\u0E29\u0E35 \u0E1B\u0E23\u0E30\u0E01\u0E31\u0E19 \u0E19\u0E49\u0E33\u0E21\u0E31\u0E19\u0E40\u0E1A\u0E23\u0E04 \u0E2F\u0E25\u0E2F) \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E25\u0E48\u0E27\u0E07\u0E2B\u0E19\u0E49\u0E32 ", data.settings.warnAheadDays, " \u0E27\u0E31\u0E19 \u2014 \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \"\u0E40\u0E1E\u0E34\u0E48\u0E21\" \u0E40\u0E02\u0E49\u0E32\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 space-y-2.5 mb-5"
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3"
   }, /*#__PURE__*/React.createElement(GhostBtn, {
-    onClick: exportJSON,
+    onClick: exportData,
     className: "text-center"
   }, "\u2B07\uFE0F Export JSON"), /*#__PURE__*/React.createElement(GhostBtn, {
     onClick: () => fileRef.current.click(),
@@ -2504,20 +2730,27 @@ function InfoScreen(_ref19) {
     className: "hidden",
     onChange: importJSON
   }), /*#__PURE__*/React.createElement("div", {
+    className: 'text-[12px] px-1 ' + (bDays != null && bDays <= data.settings.backupIntervalDays ? 'text-emerald-300/80' : 'text-amber-300/80')
+  }, bDays == null ? '⚠️ ยังไม่เคยสำรองข้อมูล' : '💾 สำรองล่าสุด: ' + thDate(data.settings.lastBackup) + ' (' + bDays + ' วันก่อน)'), /*#__PURE__*/React.createElement(Field, {
+    label: "\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E38\u0E01 (\u0E27\u0E31\u0E19)"
+  }, /*#__PURE__*/React.createElement(NumInput, {
+    value: String(data.settings.backupIntervalDays),
+    onChange: v => update(d => d.settings.backupIntervalDays = parseFloat(v) || 14)
+  })), /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-slate-500 px-1"
   }, "\uD83D\uDCA1 \u0E41\u0E19\u0E30\u0E19\u0E33 Export \u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E33 (Safari \u0E2D\u0E32\u0E08\u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E0A\u0E49\u0E19\u0E32\u0E19)"), /*#__PURE__*/React.createElement("button", {
     onClick: clearAll,
     className: "press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1"
   }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.0 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"));
+  }, "XMAX Logbook \xB7 v1.1 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"));
 }
-function RefRow(_ref21) {
+function RefRow(_ref22) {
   let {
     k,
     v,
     last
-  } = _ref21;
+  } = _ref22;
   return /*#__PURE__*/React.createElement("div", {
     className: 'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')
   }, /*#__PURE__*/React.createElement("span", {
@@ -2526,19 +2759,19 @@ function RefRow(_ref21) {
     className: "text-[13px] text-slate-200 text-right font-medium"
   }, v));
 }
-function SectionLabel(_ref22) {
+function SectionLabel(_ref23) {
   let {
     children
-  } = _ref22;
+  } = _ref23;
   return /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"
   }, children);
 }
-function Header(_ref23) {
+function Header(_ref24) {
   let {
     title,
     subtitle
-  } = _ref23;
+  } = _ref24;
   return /*#__PURE__*/React.createElement("div", {
     className: "pt-3 pb-4 sticky top-0 z-20"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2547,12 +2780,12 @@ function Header(_ref23) {
     className: "text-3xl font-extrabold tracking-tight"
   }, title));
 }
-function EmptyState(_ref24) {
+function EmptyState(_ref25) {
   let {
     icon,
     title,
     sub
-  } = _ref24;
+  } = _ref25;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-8 text-center"
   }, /*#__PURE__*/React.createElement("div", {
