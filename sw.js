@@ -1,4 +1,4 @@
-const CACHE = 'xmax-1782197215772';
+const CACHE = 'xmax-1782198513065';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('message', e => { if (e.data === 'skip-waiting') self.skipWaiting(); });
 self.addEventListener('activate', e => e.waitUntil((async () => {

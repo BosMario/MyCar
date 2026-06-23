@@ -10,7 +10,8 @@
   <meta name="theme-color" content="#0a0b0f" />
   <title>XMAX Logbook</title>
 
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230a0b0f'/%3E%3Ctext x='50%25' y='54%25' font-size='84' font-family='Arial' font-weight='900' fill='%2338bdf8' text-anchor='middle' dominant-baseline='middle'%3EX%3C/text%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="./icon-180.png" />
+  <link rel="icon" type="image/png" href="./icon-192.png" />
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -208,6 +209,89 @@
       { key: 'tax', title: 'ภาษีรถประจำปี', icon: '📋', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
       { key: 'prb', title: 'พ.ร.บ.', icon: '🛡️', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
       { key: 'insurance', title: 'ประกันภาคสมัครใจ', icon: '📑', km: null, months: 12, spec: 'ต่อทุก 1 ปี', star: false, thai: true },
+    ];
+
+    /* ===== บทความ: สาระสำคัญจากคู่มือ XMAX (CZD300-A · B5X-F8199-U1) ===== */
+    const ARTICLES = [
+      { icon: '⛽', title: 'น้ำมันเชื้อเพลิงที่ถูกต้อง', summary: 'แก๊สโซฮอล์ E10–E20 · RON 90+ · ถัง 13 ล.', points: [
+        'ใช้แก๊สโซฮอล์ไร้สารตะกั่ว E10–E20 ค่าออกเทน RON 90 ขึ้นไป',
+        'ห้ามใช้น้ำมันมีสารตะกั่ว — ทำให้วาล์ว แหวนลูกสูบ และระบบไอเสียเสียหายอย่างมาก',
+        'ความจุถัง 13 ลิตร · น้ำมันสำรอง 2.4 ลิตร',
+        'เมื่อขีดสุดท้ายของมาตรวัดน้ำมันกะพริบ = เหลือ ~2.4 ล. ควรเติมโดยเร็ว (จอจะสลับเป็น F Trip นับระยะให้อัตโนมัติ)',
+        'เติมอย่าให้ล้น หยุดเมื่อถึงปลายท่อเติม (น้ำมันขยายตัวเมื่อร้อน) · ดับเครื่องก่อนเติม · เช็ดที่หกทันที · ปิดฝาให้แน่น',
+      ] },
+      { icon: '🐣', title: 'การรันอินรถใหม่', summary: 'จำกัดรอบช่วง 1,600 กม.แรก + เปลี่ยนน้ำมันที่ 1,000 กม.', points: [
+        '0–1,000 กม.: ไม่เกิน 4,500 รอบ/นาที',
+        '1,000–1,600 กม.: ไม่เกิน 5,400 รอบ/นาที',
+        '1,600 กม. ขึ้นไป: ใช้งานได้ตามปกติ',
+        'หลัง 1,000 กม.แรก ต้องเปลี่ยนน้ำมันเครื่อง + น้ำมันเฟืองท้าย + ไส้กรองน้ำมันเครื่อง',
+        'หลีกเลี่ยงเร่งสุด ภาระหนัก และรอบสูงค้างนาน · ห้ามใช้เกินรอบแดง 9,000 รอบ/นาที',
+      ] },
+      { icon: '🛞', title: 'ยางและแรงดันลม', summary: 'หน้า 29 · หลัง 33 psi (วัดตอนเย็น)', points: [
+        'แรงดันลม (ยางเย็น): หน้า 29 psi · หลัง 33 psi — เท่ากันทั้งซ้อน 1–2 คน',
+        'วัด/เติมขณะยางเย็นเสมอ (อุณหภูมิยางเท่ากับอากาศรอบข้าง)',
+        'ดอกยางลึกต่ำสุด 1.0 มม. → ถึงเกณฑ์ต้องเปลี่ยน',
+        'ยางเดิม: หน้า 120/70-15 · หลัง 140/70-14 (Dunlop Scootsmart, ไม่มียางใน)',
+        'ตรวจสภาพ/ลมยางก่อนใช้ทุกครั้ง · ยางใหม่ขับช้าๆ ช่วงแรกให้หน้ายางเข้าที่',
+      ] },
+      { icon: '🔑', title: 'กุญแจอัจฉริยะ (Smart Key)', summary: 'พกติดตัว · แบต CR2032 ~2 ปี · มีโหมดฉุกเฉิน', points: [
+        'พกกุญแจติดตัวเสมอ ห้ามเก็บไว้ในรถ/กล่อง เพราะคนที่ถือกุญแจสามารถสตาร์ทรถได้',
+        'พกกุญแจกลไกสำรองด้วย — ใช้เปิดเบาะได้เมื่อแบตรถหมด',
+        'แบตกุญแจ CR2032 อายุ ~2 ปี · ถ้าไฟกะพริบ ~20 วิ ตอนเปิดรถ = แบตอ่อน ควรเปลี่ยน',
+        'ระบบปิดเองอัตโนมัติถ้าไม่ใช้รถ ~9 วัน (กดปุ่มที่กุญแจเพื่อเปิดใช้ใหม่)',
+        'เก็บ "หมายเลขรหัส" (จากป้ายที่แถมมา) ไว้ที่ปลอดภัย — ใช้เข้าโหมดฉุกเฉินเมื่อกุญแจหาย/แบตหมด',
+      ] },
+      { icon: '🛑', title: 'ระบบเบรค ABS', summary: 'เบรคต่อเนื่อง อย่าปั๊ม · ไฟดับเมื่อ >10 กม./ชม.', points: [
+        'ใช้เบรคที่มี ABS เหมือนเบรคปกติ — ออกแรงต่อเนื่อง อย่า "ปั๊ม" เบรค',
+        'อาจรู้สึกสั่นที่คันเบรคเวลา ABS ทำงาน = อาการปกติ',
+        'ไฟเตือน ABS จะดับเมื่อความเร็วถึง ~10 กม./ชม. — หากไม่ดับหรือสว่างค้างขณะขับ ให้เข้าศูนย์ตรวจสอบ',
+        'บนถนนขรุขระ/โรยหิน ระยะเบรคของ ABS อาจมากกว่าเบรคปกติ — เว้นระยะให้เพียงพอ',
+      ] },
+      { icon: '🎯', title: 'ระบบป้องกันล้อหมุนฟรี (TCS)', summary: 'ช่วยตอนเร่งบนพื้นลื่น · ปิดได้เมื่อติดหล่ม', points: [
+        'ช่วยรักษาแรงฉุดลากเมื่อเร่งบนพื้นลื่น เช่น ถนนเปียกหรือไม่ลาดยาง',
+        'ไฟ "TCS" กะพริบ = ระบบกำลังทำงาน',
+        'ปิดระบบได้เมื่อรถติดหล่ม/โคลน/ทราย (ต้องการให้ล้อหมุนฟรี) — ตั้งค่าที่จอเรือนไมล์',
+        'ไม่ทดแทนการขับขี่อย่างระวัง — ยังลื่นได้ถ้าเร่งหรือเข้าโค้งเร็วเกินไป',
+      ] },
+      { icon: '🌡️', title: 'เมื่อเครื่องยนต์ร้อนจัด', summary: 'หยุด ดับเครื่อง รอเย็น · ห้ามเปิดฝาหม้อน้ำ', points: [
+        'ถ้าขีดบนสุดของมาตรวัดอุณหภูมิ หรือข้อความ "H TEMP" กะพริบ → หยุดรถ ดับเครื่อง รอให้เย็นลง',
+        '⚠️ ห้ามเปิดฝาหม้อน้ำขณะเครื่องยังร้อน (น้ำ/ไอร้อนพุ่งออก อันตรายสาหัส) — เปิดได้เฉพาะฝาถังพักเท่านั้น',
+        'ถ้าไม่มีน้ำยาหล่อเย็น ใช้น้ำกลั่น/น้ำสะอาดแทนชั่วคราวได้ แล้วรีบเปลี่ยนเป็นน้ำยาหล่อเย็นโดยเร็ว',
+      ] },
+      { icon: '🛢️', title: 'น้ำมันเครื่อง & น้ำยาหล่อเย็น', summary: 'วิธีเช็คระดับให้ถูกต้อง', points: [
+        'น้ำมันเครื่อง 10W-40 (API SG+ · JASO MA/MB) · เปลี่ยน 1.50 ล. (พร้อมกรอง 1.60 ล.)',
+        'เช็คระดับน้ำมัน: ตั้งรถให้ตรง อุ่นเครื่องสักครู่ ดับเครื่อง รอตกตะกอน แล้วดูผ่านช่องกระจก (ให้อยู่ระหว่างขีดต่ำ-สูง)',
+        'น้ำยาหล่อเย็น: เช็คถังพักให้อยู่ระหว่างขีด L–F · เปลี่ยนทุก 3 ปี',
+        'ห้ามใช้น้ำกระด้างหรือน้ำเกลือเติมหม้อน้ำ — เกิดสนิม/ตะกรัน',
+      ] },
+      { icon: '🧳', title: 'การเก็บของ & การบรรทุก', summary: 'พิกัดกล่อง + น้ำหนักบรรทุกสูงสุด 159 กก.', points: [
+        'กล่องหน้า A ≤ 1 กก. · กล่อง B ≤ 0.5 กก. · ใต้เบาะ ≤ 5 กก. · น้ำหนักรวมบนตัวรถ ≤ 161 กก.',
+        'น้ำหนักบรรทุกสูงสุด 159 กก. (รวมผู้ขับ + ผู้โดยสาร + สัมภาระ + อุปกรณ์)',
+        'กล่องใต้เบาะร้อนได้จากแดด/เครื่องยนต์ — อย่าเก็บของไวความร้อน อิเล็กทรอนิกส์ หรือของไวไฟ',
+        'ของเปียกให้ห่อถุงก่อนเก็บ · หมวกบางแบบอาจใส่กล่องใต้เบาะไม่ได้',
+        'กระจายน้ำหนักให้สมดุล · ห้ามผูกของหนักที่แฮนด์หรือโช๊คหน้า (กระทบการบังคับ)',
+      ] },
+      { icon: '⚠️', title: 'ไฟเตือนบนเรือนไมล์', summary: 'รู้จักสัญญาณเตือนสำคัญ', points: [
+        '🔧 ไฟเตือนเครื่องยนต์: ติดค้าง = มีปัญหาเครื่อง/ระบบควบคุม → เข้าศูนย์',
+        'ABS: ไฟเตือนควรดับเมื่อความเร็ว >10 กม./ชม.',
+        'TCS: กะพริบเวลาระบบป้องกันล้อหมุนฟรีทำงาน',
+        '🔑 ไฟ Smart Key: กะพริบ ~20 วิ = แบตกุญแจอ่อน',
+        'มาตรวัดน้ำมัน: ขีดสุดท้ายกะพริบ = ใกล้หมด',
+        '❄️ ICE: เตือนเมื่ออุณหภูมิ < 4°C (ถนนอาจลื่น/เป็นน้ำแข็ง)',
+      ] },
+      { icon: '📟', title: 'จอเรือนไมล์ (Trip / Info)', summary: 'ปุ่ม TRIP & INFO ดูข้อมูลอะไรบ้าง', points: [
+        'ปุ่ม TRIP สลับ: Odo → Trip → Trip Time → Oil Trip → V-Belt Trip',
+        'ปุ่ม INFO สลับ: อุณหภูมิอากาศ → แรงดันแบต → TCS → อัตราสิ้นเปลือง → ความเร็วเฉลี่ย',
+        'Oil Trip = ระยะตั้งแต่เปลี่ยนน้ำมันเครื่อง · V-Belt Trip = ระยะตั้งแต่เปลี่ยนสายพานวี',
+        'เมื่อน้ำมันเหลือ ~2.4 ล. จอสลับเป็น F Trip นับระยะอัตโนมัติ',
+        'ตั้งนาฬิกา/รีเซ็ต trip ได้เฉพาะตอนรถจอดเท่านั้น',
+      ] },
+      { icon: '🅿️', title: 'การจอด & ความปลอดภัย', summary: 'ท่อร้อน · ที่อับอากาศ · หมวกนิรภัย', points: [
+        'จอดบนพื้นแข็งราบ ใช้ขาตั้ง · ระวังท่อไอเสีย/เครื่องยนต์ร้อน (เด็กหรือคนเดินผ่านสัมผัส)',
+        'ไม่จอดใกล้หญ้าแห้ง/วัสดุติดไฟง่าย · ปิดกุญแจอัจฉริยะเมื่อจอดทิ้งไว้',
+        '⚠️ ห้ามติดเครื่องในที่อับอากาศ (โรงรถปิด) — ไอเสียมีคาร์บอนมอนอกไซด์ สูดดมถึงตายได้',
+        'สวมหมวกนิรภัยมาตรฐาน มอก. ทุกครั้ง (แบบเต็มใบสำหรับความเร็วปานกลาง-สูง)',
+      ] },
     ];
 
     const DEFAULT_DATA = {
@@ -573,9 +657,10 @@
       const tabs = [
         { id: 'home', icon: '🏠', label: 'หน้าหลัก' },
         { id: 'fuel', icon: '⛽', label: 'น้ำมัน' },
-        { id: 'maint', icon: '🔧', label: 'ซ่อมบำรุง' },
+        { id: 'maint', icon: '🔧', label: 'ซ่อม' },
         { id: 'report', icon: '📊', label: 'สรุป' },
-        { id: 'info', icon: '⚙️', label: 'ข้อมูลรถ' },
+        { id: 'guide', icon: '📖', label: 'บทความ' },
+        { id: 'info', icon: '⚙️', label: 'ข้อมูล' },
       ];
 
       return (
@@ -586,14 +671,15 @@
               {tab === 'fuel' && <FuelScreen ctx={ctx} />}
               {tab === 'maint' && <MaintScreen ctx={ctx} />}
               {tab === 'report' && <ReportScreen ctx={ctx} />}
+              {tab === 'guide' && <GuideScreen />}
               {tab === 'info' && <InfoScreen ctx={ctx} />}
             </div>
 
             {/* Tab bar */}
             <div className="fixed bottom-0 inset-x-0 z-40">
               <div className="max-w-md mx-auto px-3">
-                <div className="glass-strong border border-white/10 rounded-[1.75rem] mb-2 px-1.5 pt-1.5 tabbar-h shadow-2xl shadow-black/50">
-                  <div className="grid grid-cols-5 gap-1">
+                <div className="glass-strong border border-white/10 rounded-[1.75rem] mb-2 px-1 pt-1.5 tabbar-h shadow-2xl shadow-black/50">
+                  <div className="grid grid-cols-6 gap-0.5">
                     {tabs.map(t => {
                       const active = tab === t.id;
                       return (
@@ -644,6 +730,43 @@
           <path d={topline} fill="none" stroke="#bae6fd" strokeWidth="2.5" strokeLinecap="round" opacity="0.9" filter="url(#sglow)" />
           <path d="M319,96 L333,103 L332,114 L320,110 Z" fill="#e0f2fe" filter="url(#sglow)" />
         </svg>
+      );
+    }
+
+    /* ============================== GUIDE / ARTICLES ============================== */
+    function GuideScreen() {
+      const [open, setOpen] = useState(0);
+      return (
+        <div className="px-4 pt-safe">
+          <Header title="บทความ" subtitle="สาระสำคัญจากคู่มือ XMAX" />
+          <div className="space-y-2.5">
+            {ARTICLES.map((a, i) => {
+              const isOpen = open === i;
+              return (
+                <Card key={i} className="overflow-hidden">
+                  <button onClick={() => setOpen(isOpen ? -1 : i)} className="press w-full flex items-center gap-3 p-4 text-left">
+                    <span className="text-2xl flex-shrink-0">{a.icon}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="font-bold block">{a.title}</span>
+                      <span className="text-[12px] text-slate-500 block truncate">{a.summary}</span>
+                    </span>
+                    <span className={'text-slate-500 text-lg transition-transform flex-shrink-0 ' + (isOpen ? 'rotate-180' : '')}>⌄</span>
+                  </button>
+                  {isOpen && (
+                    <div className="px-4 pb-4 anim-fade">
+                      <ul className="space-y-2 border-t border-white/[0.06] pt-3">
+                        {a.points.map((p, j) => (
+                          <li key={j} className="text-[13.5px] text-slate-300 leading-relaxed flex gap-2"><span className="text-brand mt-0.5 flex-shrink-0">›</span><span>{p}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+            <div className="text-center text-[12px] text-slate-600 py-3 leading-relaxed">อ้างอิงคู่มือผู้ใช้ Yamaha XMAX 300<br />(CZD300-A · B5X-F8199-U1)</div>
+          </div>
+        </div>
       );
     }
 
@@ -1718,7 +1841,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.8 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.9 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
@@ -1847,11 +1970,12 @@
       try {
         const manifest = {
           name: 'XMAX Logbook', short_name: 'XMAX', display: 'standalone', orientation: 'portrait',
-          background_color: '#070809', theme_color: '#0a0b0f', start_url: '.',
-          icons: [{
-            src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230a0b0f'/%3E%3Ctext x='50%25' y='54%25' font-size='240' font-family='Arial' font-weight='900' fill='%2338bdf8' text-anchor='middle' dominant-baseline='middle'%3EX%3C/text%3E%3C/svg%3E",
-            sizes: '512x512', type: 'image/svg+xml', purpose: 'any'
-          }],
+          background_color: '#060f28', theme_color: '#0a1a3c', start_url: '.',
+          icons: [
+            { src: './icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: './icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: './icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
           shortcuts: [
             { name: 'เติมน้ำมัน', short_name: 'เติมน้ำมัน', url: './?action=fuel' },
             { name: 'บันทึกซ่อม', short_name: 'ซ่อมบำรุง', url: './?action=maint' },
