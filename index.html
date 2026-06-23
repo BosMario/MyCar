@@ -3644,7 +3644,7 @@ function InfoScreen(_ref22) {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.7 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v1.8 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
@@ -3961,31 +3961,19 @@ try {
       } catch (e) {}
     })();
 
-    // ---- Service worker (offline) via blob ----
-    if ('serviceWorker' in navigator) {
-      const swCode = `
-        const CACHE = 'xmax-v1';
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-        self.addEventListener('fetch', e => {
-          if (e.request.method !== 'GET') return;
-          e.respondWith(
-            caches.open(CACHE).then(cache =>
-              cache.match(e.request).then(cached => {
-                const net = fetch(e.request).then(resp => {
-                  if (resp && resp.status === 200) cache.put(e.request, resp.clone());
-                  return resp;
-                }).catch(() => cached);
-                return cached || net;
-              })
-            )
-          );
+    // ---- Service worker (network-first → ได้ของใหม่เสมอเมื่อออนไลน์, ออฟไลน์ใช้แคช) ----
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        reg.update();
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          nw && nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) nw.postMessage('skip-waiting');
+          });
         });
-      `;
-      try {
-        const url = URL.createObjectURL(new Blob([swCode], { type: 'text/javascript' }));
-        navigator.serviceWorker.register(url).catch(() => {});
-      } catch (e) {}
+      }).catch(() => {});
     }
   </script>
 </body>

@@ -1718,7 +1718,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.7 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.8 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
@@ -1865,31 +1865,19 @@
       } catch (e) {}
     })();
 
-    // ---- Service worker (offline) via blob ----
-    if ('serviceWorker' in navigator) {
-      const swCode = `
-        const CACHE = 'xmax-v1';
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-        self.addEventListener('fetch', e => {
-          if (e.request.method !== 'GET') return;
-          e.respondWith(
-            caches.open(CACHE).then(cache =>
-              cache.match(e.request).then(cached => {
-                const net = fetch(e.request).then(resp => {
-                  if (resp && resp.status === 200) cache.put(e.request, resp.clone());
-                  return resp;
-                }).catch(() => cached);
-                return cached || net;
-              })
-            )
-          );
+    // ---- Service worker (network-first → ได้ของใหม่เสมอเมื่อออนไลน์, ออฟไลน์ใช้แคช) ----
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        reg.update();
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          nw && nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) nw.postMessage('skip-waiting');
+          });
         });
-      `;
-      try {
-        const url = URL.createObjectURL(new Blob([swCode], { type: 'text/javascript' }));
-        navigator.serviceWorker.register(url).catch(() => {});
-      } catch (e) {}
+      }).catch(() => {});
     }
   </script>
 </body>
