@@ -825,7 +825,8 @@ const DEFAULT_DATA = {
     frameNo: '',
     engineNo: '',
     registerDate: '',
-    currentOdo: 0
+    currentOdo: 0,
+    heroPhoto: ''
   },
   fuelLogs: [],
   maintenanceLogs: [],
@@ -1734,6 +1735,19 @@ function HomeScreen(_ref8) {
   const [fuelOpen, setFuelOpen] = useState(false);
   const [maintOpen, setMaintOpen] = useState(false);
   const [quickItem, setQuickItem] = useState(null);
+  const heroRef = useRef(null);
+  const onHeroPhoto = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const b64 = await compressImage(file, 1100, 0.72);
+      update(d => d.vehicle.heroPhoto = b64);
+      showToast('ตั้งรูปรถแล้ว');
+    } catch (err) {
+      alert('ใส่รูปไม่สำเร็จ');
+    }
+    e.target.value = '';
+  };
   useEffect(() => {
     if (!pendingAction) return;
     if (pendingAction === 'fuel') setFuelOpen(true);else if (pendingAction === 'maint') setMaintOpen(true);else if (pendingAction === 'odo') setOdoOpen(true);
@@ -1840,9 +1854,30 @@ function HomeScreen(_ref8) {
     className: "text-[10px] text-slate-500 uppercase tracking-wider"
   }, "\u0E2A\u0E16\u0E32\u0E19\u0E30"), /*#__PURE__*/React.createElement("div", {
     className: 'text-[13px] font-bold ' + (alerts.length ? 'text-amber-300' : 'text-emerald-300')
-  }, alerts.length ? '⚠ ' + alerts.length + ' รายการ' : '● พร้อมใช้'))), /*#__PURE__*/React.createElement(ScooterArt, {
-    className: "w-full h-36 my-1"
-  }), /*#__PURE__*/React.createElement("div", {
+  }, alerts.length ? '⚠ ' + alerts.length + ' รายการ' : '● พร้อมใช้'))), /*#__PURE__*/React.createElement("div", {
+    className: "relative my-1"
+  }, data.vehicle.heroPhoto ? /*#__PURE__*/React.createElement("img", {
+    src: data.vehicle.heroPhoto,
+    alt: "\u0E23\u0E16\u0E02\u0E2D\u0E07\u0E09\u0E31\u0E19",
+    className: "w-full h-40 object-cover rounded-2xl",
+    style: {
+      objectPosition: 'center 42%'
+    }
+  }) : /*#__PURE__*/React.createElement(ScooterArt, {
+    className: "w-full h-36"
+  }), /*#__PURE__*/React.createElement("input", {
+    ref: heroRef,
+    type: "file",
+    accept: "image/*",
+    className: "hidden",
+    onChange: onHeroPhoto
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => heroRef.current.click(),
+    className: "press absolute bottom-2 right-2 px-2.5 py-1.5 rounded-xl glass-strong border border-white/15 text-[12px] font-bold text-slate-200 flex items-center gap-1"
+  }, "\uD83D\uDCF7 ", data.vehicle.heroPhoto ? 'เปลี่ยนรูป' : 'ใส่รูปรถ'), data.vehicle.heroPhoto && /*#__PURE__*/React.createElement("button", {
+    onClick: () => update(d => d.vehicle.heroPhoto = ''),
+    className: "press absolute top-2 right-2 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center text-sm"
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     className: "flex items-end justify-between"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "text-[10px] text-slate-500 uppercase tracking-[0.18em]"
@@ -3609,7 +3644,7 @@ function InfoScreen(_ref22) {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.6 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v1.7 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx

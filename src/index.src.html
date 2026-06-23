@@ -211,7 +211,7 @@
     ];
 
     const DEFAULT_DATA = {
-      vehicle: { model: 'Yamaha XMAX 300 (CZD300-A)', nickname: 'เจ้าฟ้า', plate: '', frameNo: '', engineNo: '', registerDate: '', currentOdo: 0 },
+      vehicle: { model: 'Yamaha XMAX 300 (CZD300-A)', nickname: 'เจ้าฟ้า', plate: '', frameNo: '', engineNo: '', registerDate: '', currentOdo: 0, heroPhoto: '' },
       fuelLogs: [],
       maintenanceLogs: [],
       odoLogs: [],
@@ -654,6 +654,8 @@
       const [fuelOpen, setFuelOpen] = useState(false);
       const [maintOpen, setMaintOpen] = useState(false);
       const [quickItem, setQuickItem] = useState(null);
+      const heroRef = useRef(null);
+      const onHeroPhoto = async (e) => { const file = e.target.files[0]; if (!file) return; try { const b64 = await compressImage(file, 1100, 0.72); update(d => d.vehicle.heroPhoto = b64); showToast('ตั้งรูปรถแล้ว'); } catch (err) { alert('ใส่รูปไม่สำเร็จ'); } e.target.value = ''; };
 
       useEffect(() => {
         if (!pendingAction) return;
@@ -744,7 +746,14 @@
                   </div>
                 </div>
 
-                <ScooterArt className="w-full h-36 my-1" />
+                <div className="relative my-1">
+                  {data.vehicle.heroPhoto
+                    ? <img src={data.vehicle.heroPhoto} alt="รถของฉัน" className="w-full h-40 object-cover rounded-2xl" style={{ objectPosition: 'center 42%' }} />
+                    : <ScooterArt className="w-full h-36" />}
+                  <input ref={heroRef} type="file" accept="image/*" className="hidden" onChange={onHeroPhoto} />
+                  <button onClick={() => heroRef.current.click()} className="press absolute bottom-2 right-2 px-2.5 py-1.5 rounded-xl glass-strong border border-white/15 text-[12px] font-bold text-slate-200 flex items-center gap-1">📷 {data.vehicle.heroPhoto ? 'เปลี่ยนรูป' : 'ใส่รูปรถ'}</button>
+                  {data.vehicle.heroPhoto && <button onClick={() => update(d => d.vehicle.heroPhoto = '')} className="press absolute top-2 right-2 w-7 h-7 rounded-full bg-black/55 text-white flex items-center justify-center text-sm">✕</button>}
+                </div>
 
                 <div className="flex items-end justify-between">
                   <div>
@@ -1709,7 +1718,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.6 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v1.7 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
