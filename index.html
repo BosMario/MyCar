@@ -486,16 +486,53 @@ const {
 /* ============================== CONSTANTS / SEED ============================== */
 const STORAGE_KEY = 'xmax_logbook_v1';
 const REF = {
-  vehicle: {
-    model: 'Yamaha XMAX 300',
-    code: 'CZD300-A (B5X)',
-    engine: '292 cc · สูบเดียว · 4 วาล์ว · SOHC · ระบายความร้อนด้วยน้ำ',
-    length: '181 ซม.',
-    payload: '159 กก.',
-    seat: '795 มม.',
-    battery: 'GTZ8V · 12V 7.0Ah',
-    partbook: 'B5X-F8199-U1'
-  },
+  // อ้างอิงคู่มือ CZD300-A · B5X-F8199-U1 (พิมพ์ 2022.01)
+  spec: [{
+    k: 'รุ่น',
+    v: 'Yamaha XMAX 300 · CZD300-A (B5X)'
+  }, {
+    k: 'เครื่องยนต์',
+    v: '292 cc · สูบเดียว · SOHC · ระบายความร้อนด้วยน้ำ'
+  }, {
+    k: 'กระบอกสูบ × ช่วงชัก',
+    v: '70.0 × 75.9 มม.'
+  }, {
+    k: 'น้ำหนัก (รวมของเหลว)',
+    v: '181 กก.'
+  }, {
+    k: 'น้ำหนักบรรทุกสูงสุด',
+    v: '159 กก.'
+  }, {
+    k: 'ความยาว × กว้าง × สูง',
+    v: '2185 × 775 × 1415/1465 มม.'
+  }, {
+    k: 'ระยะฐานล้อ',
+    v: '1540 มม.'
+  }, {
+    k: 'ความสูงใต้ท้อง',
+    v: '135 มม.'
+  }, {
+    k: 'ความสูงเบาะ',
+    v: '795 มม.'
+  }, {
+    k: 'รัศมีวงเลี้ยว',
+    v: '2.6 ม.'
+  }, {
+    k: 'หัวเทียน',
+    v: 'NGK LMAR8A-9 · เขี้ยว 0.8–0.9 มม.'
+  }, {
+    k: 'น้ำมันเบรค',
+    v: 'DOT 4 (ของแท้ Yamaha)'
+  }, {
+    k: 'แบตเตอรี่',
+    v: 'GTZ8V · 12V 7.0Ah'
+  }, {
+    k: 'แบตกุญแจรีโมท',
+    v: 'CR2032 (อายุ ~2 ปี)'
+  }, {
+    k: 'รหัสคู่มืออะไหล่',
+    v: 'B5X-F8199-U1'
+  }],
   fluids: [{
     name: 'น้ำมันเครื่อง',
     spec: 'SAE 10W-40 / 0W-30 · API SG+ · JASO MA/MB',
@@ -512,6 +549,10 @@ const REF = {
     name: 'น้ำมันเชื้อเพลิง',
     spec: 'แก๊สโซฮอล์ E10–E20 · RON 90 ขึ้นไป',
     amount: 'ถัง 13 ล. · สำรอง 2.4 ล.'
+  }, {
+    name: 'น้ำมันเบรค',
+    spec: 'DOT 4 ของแท้ Yamaha',
+    amount: 'เติมให้อยู่ระดับที่กำหนด'
   }],
   tires: [{
     pos: 'หน้า',
@@ -524,7 +565,51 @@ const REF = {
     brand: 'Dunlop Scootsmart · Tubeless',
     psi: '33 psi (225 kPa)'
   }],
-  bulbs: 'ไฟหน้า LED · ไฟเบรค/ท้าย LED · ไฟหรี่ LED · ไฟเลี้ยวหน้า 10.0W · ไฟเลี้ยวหลัง 10.0W · ส่องป้าย 5.0W'
+  tireNote: 'แรงดันเท่ากันทั้งซ้อน 1–2 คน · ดอกยางต่ำสุด 1.0 มม. (ถึงต้องเปลี่ยน)',
+  bulbs: 'ไฟหน้า LED · ไฟเบรค/ท้าย LED · ไฟหรี่ LED · ไฟเลี้ยวหน้า 10.0W · ไฟเลี้ยวหลัง 10.0W · ส่องป้าย 5.0W',
+  storage: [{
+    k: 'กล่องหน้า (A)',
+    v: 'รับน้ำหนัก ≤ 1.0 กก.'
+  }, {
+    k: 'กล่องหน้า (B)',
+    v: 'รับน้ำหนัก ≤ 0.5 กก.'
+  }, {
+    k: 'กล่องใต้เบาะ (หลัง)',
+    v: 'รับน้ำหนัก ≤ 5.0 กก.'
+  }, {
+    k: 'น้ำหนักบนตัวรถรวม',
+    v: '≤ 161 กก.'
+  }],
+  breakIn: [{
+    range: '0–1,000 กม.',
+    v: 'ไม่เกิน 4,500 รอบ/นาที'
+  }, {
+    range: '1,000–1,600 กม.',
+    v: 'ไม่เกิน 5,400 รอบ/นาที'
+  }, {
+    range: '1,600 กม. ขึ้นไป',
+    v: 'ใช้งานได้ตามปกติ'
+  }],
+  breakInNote: 'สำคัญ: หลัง 1,000 กม.แรก ต้องเปลี่ยนน้ำมันเครื่อง + น้ำมันเฟืองท้าย + ไส้กรองน้ำมันเครื่อง · รอบแดง (ห้ามเกิน) = 9,000 รอบ/นาที',
+  torque: [{
+    k: 'โบลท์ถ่ายน้ำมันเครื่อง',
+    v: '20 N·m'
+  }, {
+    k: 'โบลท์ฝาครอบไส้กรองน้ำมันเครื่อง',
+    v: '10 N·m'
+  }, {
+    k: 'โบลท์ถ่ายน้ำมันเฟืองท้าย',
+    v: '20 N·m'
+  }, {
+    k: 'หัวเทียน',
+    v: '13 N·m'
+  }, {
+    k: 'โบลท์ยึดหน้ากากบังลม',
+    v: '8 N·m'
+  }, {
+    k: 'โบลท์ยึดหม้อกรองอากาศ',
+    v: '10 N·m'
+  }]
 };
 const SCHEDULE = [{
   key: 'engine_oil',
@@ -564,8 +649,24 @@ const SCHEDULE = [{
   icon: '⚡',
   km: 8000,
   months: null,
-  spec: 'เปลี่ยนทุก 8,000 (ตรวจ/ทำความสะอาด 10,000)',
+  spec: 'NGK LMAR8A-9 · เปลี่ยนทุก 8,000 (ตรวจ/ทำความสะอาด 10,000)',
   star: false
+}, {
+  key: 'valve',
+  title: 'ระยะห่างวาล์ว',
+  icon: '🔧',
+  km: 10000,
+  months: null,
+  spec: 'ตรวจ/ปรับทุก ~10,000–20,000 (งานศูนย์)',
+  star: true
+}, {
+  key: 'fuel_filter',
+  title: 'ไส้กรองน้ำมันเชื้อเพลิง',
+  icon: '⛽',
+  km: 12000,
+  months: null,
+  spec: 'เปลี่ยนทุก 12,000 (คนละตัวกับกรองน้ำมันเครื่อง)',
+  star: true
 }, {
   key: 'air_filter',
   title: 'ไส้กรองอากาศ',
@@ -581,6 +682,14 @@ const SCHEDULE = [{
   km: 10000,
   months: null,
   spec: 'ทำความสะอาดทุก 10,000',
+  star: true
+}, {
+  key: 'evap',
+  title: 'ระบบควบคุมไอระเหยน้ำมัน',
+  icon: '♻️',
+  km: 12000,
+  months: null,
+  spec: 'ตรวจครั้งแรก 19,000 แล้วทุก 12,000 (งานศูนย์)',
   star: true
 }, {
   key: 'brake_fluid',
@@ -2648,29 +2757,12 @@ function InfoScreen(_ref20) {
     className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-2 flex items-center gap-2"
-  }, "\uD83D\uDEF5 \u0E2A\u0E40\u0E1B\u0E04\u0E23\u0E16"), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E23\u0E38\u0E48\u0E19",
-    v: REF.vehicle.model + ' · ' + REF.vehicle.code
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E22\u0E19\u0E15\u0E4C",
-    v: REF.vehicle.engine
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01 (\u0E23\u0E27\u0E21\u0E02\u0E2D\u0E07\u0E40\u0E2B\u0E25\u0E27)",
-    v: REF.vehicle.length
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E1A\u0E23\u0E23\u0E17\u0E38\u0E01\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14",
-    v: REF.vehicle.payload
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E39\u0E07\u0E40\u0E1A\u0E32\u0E30",
-    v: REF.vehicle.seat
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E41\u0E1A\u0E15\u0E40\u0E15\u0E2D\u0E23\u0E35\u0E48",
-    v: REF.vehicle.battery
-  }), /*#__PURE__*/React.createElement(RefRow, {
-    k: "\u0E23\u0E2B\u0E31\u0E2A\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D\u0E2D\u0E30\u0E44\u0E2B\u0E25\u0E48",
-    v: REF.vehicle.partbook,
-    last: true
-  })), /*#__PURE__*/React.createElement(Card, {
+  }, "\uD83D\uDEF5 \u0E2A\u0E40\u0E1B\u0E04\u0E23\u0E16"), REF.spec.map((r, i) => /*#__PURE__*/React.createElement(RefRow, {
+    key: i,
+    k: r.k,
+    v: r.v,
+    last: i === REF.spec.length - 1
+  }))), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 mb-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-2 flex items-center gap-2"
@@ -2691,7 +2783,7 @@ function InfoScreen(_ref20) {
     className: "font-bold mb-2 flex items-center gap-2"
   }, "\uD83D\uDEDE \u0E22\u0E32\u0E07 & \u0E41\u0E23\u0E07\u0E14\u0E31\u0E19\u0E25\u0E21"), REF.tires.map((t, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
-    className: 'py-2 ' + (i < REF.tires.length - 1 ? 'border-b border-white/[0.06]' : '')
+    className: "py-2 border-b border-white/[0.06]"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex justify-between"
   }, /*#__PURE__*/React.createElement("span", {
@@ -2700,7 +2792,38 @@ function InfoScreen(_ref20) {
     className: "text-[14px] text-emerald-300 font-bold"
   }, t.psi)), /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-slate-500 mt-0.5"
-  }, t.brand)))), /*#__PURE__*/React.createElement(Card, {
+  }, t.brand))), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-500 mt-2"
+  }, REF.tireNote)), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-2 flex items-center gap-2"
+  }, "\uD83E\uDDF3 \u0E04\u0E27\u0E32\u0E21\u0E08\u0E38\u0E01\u0E25\u0E48\u0E2D\u0E07\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E2D\u0E07"), REF.storage.map((r, i) => /*#__PURE__*/React.createElement(RefRow, {
+    key: i,
+    k: r.k,
+    v: r.v,
+    last: i === REF.storage.length - 1
+  }))), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-2 flex items-center gap-2"
+  }, "\uD83D\uDC23 \u0E23\u0E30\u0E22\u0E30\u0E23\u0E31\u0E19\u0E2D\u0E34\u0E19 (\u0E23\u0E16\u0E43\u0E2B\u0E21\u0E48)"), REF.breakIn.map((r, i) => /*#__PURE__*/React.createElement(RefRow, {
+    key: i,
+    k: r.range,
+    v: r.v,
+    last: i === REF.breakIn.length - 1
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-amber-300/80 mt-2 leading-relaxed"
+  }, "\u26A0\uFE0F ", REF.breakInNote)), /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 mb-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "font-bold mb-2 flex items-center gap-2"
+  }, "\uD83D\uDD29 \u0E04\u0E48\u0E32\u0E41\u0E23\u0E07\u0E1A\u0E34\u0E14 (\u0E0B\u0E48\u0E2D\u0E21\u0E40\u0E2D\u0E07)"), REF.torque.map((r, i) => /*#__PURE__*/React.createElement(RefRow, {
+    key: i,
+    k: r.k,
+    v: r.v,
+    last: i === REF.torque.length - 1
+  }))), /*#__PURE__*/React.createElement(Card, {
     className: "p-4 mb-5"
   }, /*#__PURE__*/React.createElement("div", {
     className: "font-bold mb-2 flex items-center gap-2"
@@ -2743,7 +2866,7 @@ function InfoScreen(_ref20) {
     className: "press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1"
   }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v1.1 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"));
+  }, "XMAX Logbook \xB7 v1.2 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"));
 }
 function RefRow(_ref22) {
   let {
