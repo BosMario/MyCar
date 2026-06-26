@@ -90,7 +90,11 @@ async function main() {
   const build = String(Date.now());
   const sw = [
     "const CACHE = 'xmax-" + build + "';",
-    "self.addEventListener('install', e => self.skipWaiting());",
+    "self.addEventListener('install', e => {",
+    "  self.skipWaiting();",
+    "  // precache the document so every open is instant from cache (never waits on a slow network)",
+    "  e.waitUntil((async () => { try { const r = await fetch('./index.html', { cache: 'no-store' }); if (r && r.ok) (await caches.open(CACHE)).put('./index.html', r); } catch (err) {} })());",
+    "});",
     "self.addEventListener('message', e => { if (e.data === 'skip-waiting') self.skipWaiting(); });",
     "self.addEventListener('activate', e => e.waitUntil((async () => {",
     "  const keys = await caches.keys();",
