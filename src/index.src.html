@@ -487,6 +487,125 @@
       });
     }
 
+    /* ===== OCR สแกนใบเสร็จ (Tesseract.js — ฟรี ทำงานในเครื่อง ฝังในแอพ) ===== */
+    let _tesseractPromise = null;
+    function loadTesseract() {
+      if (window.Tesseract) return Promise.resolve(window.Tesseract);
+      if (_tesseractPromise) return _tesseractPromise;
+      _tesseractPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = './tesseract/tesseract.min.js';
+        s.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('Tesseract ไม่พร้อม'));
+        s.onerror = () => { _tesseractPromise = null; reject(new Error('โหลดตัวอ่านใบเสร็จไม่สำเร็จ (ครั้งแรกต้องต่อเน็ต)')); };
+        document.head.appendChild(s);
+      });
+      return _tesseractPromise;
+    }
+
+    // ปรับภาพให้ OCR อ่านง่ายขึ้น: ขยาย + เทาดำ + เพิ่มคอนทราสต์
+    function preprocessForOCR(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = new Image();
+          img.onload = () => {
+            const scale = Math.min(3, Math.max(1, 1600 / img.width));
+            const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+            const id = ctx.getImageData(0, 0, w, h), d = id.data, contrast = 1.45;
+            for (let i = 0; i < d.length; i += 4) {
+              let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              g = ((g / 255 - 0.5) * contrast + 0.5) * 255;
+              d[i] = d[i + 1] = d[i + 2] = g < 0 ? 0 : g > 255 ? 255 : g;
+            }
+            ctx.putImageData(id, 0, 0);
+            resolve(cv.toDataURL('image/png'));
+          };
+          img.onerror = reject; img.src = e.target.result;
+        };
+        reader.onerror = reject; reader.readAsDataURL(file);
+      });
+    }
+
+    // เดาหมวดหมู่จากชื่อรายการ → คืน itemKey (หรือ '' = ให้ผู้ใช้เลือกเอง)
+    function categorizeItem(raw) {
+      const s = (raw || '').toLowerCase().replace(/\s+/g, '');
+      const has = (...ks) => ks.some(k => s.includes(k));
+      if (has('กรองอากาศ', 'ไส้กรองอากาศ', 'airfilter') && has('ซีวีที', 'สายพาน', 'cvt', 'ห้องสายพาน')) return 'vbelt_filter';
+      if (has('กรองน้ำมันเครื่อง', 'ไส้กรองน้ำมันเครื่อง', 'กรองเครื่อง', 'oilfilter')) return 'oil_filter';
+      if (has('กรองน้ำมันเชื้อเพลิง', 'กรองเชื้อเพลิง', 'fuelfilter')) return 'fuel_filter';
+      if (has('กรองอากาศ', 'ไส้กรองอากาศ', 'airfilter')) return 'air_filter';
+      if (has('เฟืองท้าย', 'atpremium', 'น้ำมันat', 'เกียร์', 'gearoil')) return 'gear_oil';
+      if (has('น้ำมันเครื่อง', 'engineoil', 'yamalube', '10w-40', '10w40')) return 'engine_oil';
+      if (has('หัวเทียน', 'sparkplug', 'ngk', 'lmar')) return 'spark_plug';
+      if (has('ผ้าเบรค', 'ผ้าเบรก', 'brakepad', 'discpad')) return 'brake_pads';
+      if (has('น้ำมันเบรค', 'brakefluid', 'dot4')) return 'brake_fluid';
+      if (has('หล่อเย็น', 'คูลแลนท์', 'coolant', 'น้ำยาหม้อน้ำ')) return 'coolant';
+      if (has('สายพาน', 'vbelt', 'v-belt', 'เบลท์')) return 'v_belt';
+      if (has('ยางหน้า', 'ยางหลัง', 'dunlop', 'tubeless', 'tire', 'tyre')) return 'tires';
+      if (has('แบตเตอรี', 'แบตเตอรี่', 'battery', 'gtz')) return 'battery';
+      if (has('จาระบี', 'grease', 'ลูกปืนคอ')) return 'steering_bearing';
+      if (has('พ.ร.บ', 'พรบ')) return 'prb';
+      if (has('ภาษีรถ', 'ภาษีประจำปี', 'ภาษี')) return 'tax';
+      if (has('ประกัน')) return 'insurance';
+      return '';
+    }
+
+    const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    function extractReceiptDate(text) {
+      for (let i = 0; i < TH_MONTHS.length; i++) {
+        const m = text.match(new RegExp('(\\d{1,2})\\s*' + TH_MONTHS[i] + '\\s*(\\d{4})'));
+        if (m) { let y = +m[2]; if (y > 2400) y -= 543; return y + '-' + String(i + 1).padStart(2, '0') + '-' + String(+m[1]).padStart(2, '0'); }
+      }
+      const m2 = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+      if (m2) { let y = +m2[3]; if (y < 100) y += 2000; if (y > 2400) y -= 543; return y + '-' + String(+m2[2]).padStart(2, '0') + '-' + String(+m2[1]).padStart(2, '0'); }
+      return '';
+    }
+
+    function parseReceiptText(text) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const items = [];
+      const skip = /รวม|ทั้งสิ้น|ส่วนลด|ภาษีมูลค่า|vat|จำนวนเงิน|รับเงิน|เลขที่|ใบเสร็จ|ใบแจ้ง|ลูกค้า|สาขา|โทร|ที่อยู่|ลงชื่อ|พนักงาน|รายการ|จำนวน\s*ราคา/i;
+      let total = 0, shop = '';
+      const tm = text.match(/(?:รวมทั้งสิ้น|จำนวนเงินรวม|ยอดสุทธิ|รวมเงิน)[^\d]*([\d,]+\.\d{2})/);
+      if (tm) total = parseFloat(tm[1].replace(/,/g, '')) || 0;
+      const sm = text.match(/.*(?:ยานยนต์|อะไหล่|การช่าง|บริการ|มอเตอร์|ออโต้| aut|yamaha).*/i);
+      if (sm) shop = sm[0].replace(/[^ก-๙a-zA-Z0-9 .]/g, '').trim().slice(0, 40);
+      for (const line of lines) {
+        if (skip.test(line)) continue;
+        const thai = (line.match(/[ก-๙]/g) || []).length;
+        const nums = (line.match(/\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2}/g) || []).map(n => parseFloat(n.replace(/,/g, ''))).filter(n => !isNaN(n));
+        if (thai < 3 || !nums.length) continue;
+        const cost = nums[nums.length - 1]; // คอลัมน์ขวาสุด = จำนวนเงินรวมของบรรทัด
+        if (!(cost > 0)) continue;
+        let name = line
+          .replace(/^\s*\d+\s*/, '')          // เลขลำดับหน้าบรรทัด
+          .replace(/[A-Z0-9]{6,}/g, ' ')       // รหัสอะไหล่ เช่น 5YPE34400000
+          .replace(/[\d.,]+/g, ' ')            // ตัวเลข/ราคา
+          .replace(/[\/|]+/g, ' ')
+          .replace(/\s+/g, ' ').trim();
+        if (name.length >= 3) items.push({ name, cost, itemKey: categorizeItem(name) });
+      }
+      return { items, total, date: extractReceiptDate(text), shop };
+    }
+
+    async function runReceiptOCR(file, onProgress) {
+      const Tess = await loadTesseract();
+      const dataUrl = await preprocessForOCR(file);
+      const worker = await Tess.createWorker('tha+eng', 1, {
+        workerPath: './tesseract/worker.min.js',
+        corePath: './tesseract/',
+        langPath: './tesseract/lang/',
+        gzip: true,
+        logger: m => { if (m.status === 'recognizing text' && onProgress) onProgress(Math.round((m.progress || 0) * 100)); },
+      });
+      try {
+        const { data } = await worker.recognize(dataUrl);
+        return parseReceiptText(data.text);
+      } finally { await worker.terminate(); }
+    }
+
     function downloadFile(content, filename, mime) {
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -1209,6 +1328,124 @@
       );
     }
 
+    function ScanReceiptSheet({ open, onClose, ctx }) {
+      const { data, update, showToast } = ctx;
+      const allItems = activeSchedule(data.settings);
+      const fileRef = useRef(null);
+      const [busy, setBusy] = useState(false);
+      const [progress, setProgress] = useState(0);
+      const [error, setError] = useState('');
+      const [result, setResult] = useState(null);   // { items, total }
+      const [date, setDate] = useState('');
+      const [odo, setOdo] = useState('');
+      const [shop, setShop] = useState('');
+
+      useEffect(() => {
+        if (open) { setBusy(false); setProgress(0); setError(''); setResult(null); setDate(''); setOdo(String(data.vehicle.currentOdo || '')); setShop(''); }
+      }, [open]);
+
+      const onPick = async (e) => {
+        const file = e.target.files[0]; e.target.value = '';
+        if (!file) return;
+        setBusy(true); setProgress(0); setError(''); setResult(null);
+        try {
+          const r = await runReceiptOCR(file, setProgress);
+          if (!r.items.length) setError('อ่านไม่เจอรายการ — ลองถ่ายให้ชัด ตรง และมีแสงพอ แล้วสแกนใหม่');
+          setResult({ items: r.items.map(it => ({ ...it, include: true })), total: r.total });
+          if (r.date) setDate(r.date);
+          if (r.shop) setShop(r.shop);
+        } catch (err) { setError(err.message || 'สแกนไม่สำเร็จ'); }
+        finally { setBusy(false); }
+      };
+
+      const setItem = (i, patch) => setResult(p => ({ ...p, items: p.items.map((it, idx) => idx === i ? { ...it, ...patch } : it) }));
+
+      const save = () => {
+        const odoN = parseFloat(odo) || 0;
+        const chosen = (result.items || []).filter(it => it.include && (parseFloat(it.cost) > 0 || it.itemKey || (it.name || '').trim()));
+        if (!chosen.length) { alert('ยังไม่มีรายการที่เลือกบันทึก'); return; }
+        const dt = date || todayStr();
+        update(d => {
+          chosen.forEach(it => {
+            const cat = allItems.find(x => x.key === it.itemKey);
+            d.maintenanceLogs.push({ id: uuid(), date: dt, odo: odoN, itemKey: it.itemKey || '', title: cat ? cat.title : ((it.name || '').trim() || 'อื่นๆ'), cost: parseFloat(it.cost) || 0, shop: shop || '', note: 'จากใบเสร็จ (สแกน)', photo: '' });
+            if (it.itemKey) { const cur = d.scheduleState[it.itemKey]; if (!cur || odoN >= (cur.lastOdo || 0)) d.scheduleState[it.itemKey] = { lastOdo: odoN, lastDate: dt }; }
+          });
+          if (odoN > (d.vehicle.currentOdo || 0)) d.vehicle.currentOdo = odoN;
+        });
+        showToast('บันทึก ' + chosen.length + ' รายการแล้ว');
+        onClose();
+      };
+
+      const chosenCount = result ? result.items.filter(it => it.include).length : 0;
+
+      return (
+        <Sheet open={open} onClose={onClose} title="📷 สแกนใบเสร็จ">
+          <div className="space-y-4">
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />
+
+            {!result && !busy && (
+              <>
+                <div className="text-[12px] text-slate-400 leading-relaxed">ถ่ายหรือเลือกรูปใบเสร็จ — แอพจะอ่านรายการ ราคา และวันที่ให้ แล้วเดาหมวดหมู่ให้อัตโนมัติ · ทำงานในเครื่อง ฟรี ไม่ส่งรูปออกนอกเครื่อง</div>
+                <PrimaryBtn onClick={() => fileRef.current.click()}>📷 ถ่าย / เลือกรูปใบเสร็จ</PrimaryBtn>
+                {error && <div className="text-[13px] text-rose-300">{error}</div>}
+              </>
+            )}
+
+            {busy && (
+              <div className="py-8 text-center space-y-3">
+                <div className="text-3xl animate-pulse">🔎</div>
+                <div className="text-sm text-slate-300 font-semibold">กำลังอ่านใบเสร็จ...{progress ? ' ' + progress + '%' : ''}</div>
+                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-brand transition-all" style={{ width: (progress || 5) + '%' }}></div></div>
+                <div className="text-[11px] text-slate-500">ครั้งแรกอาจใช้เวลาสักครู่ (เตรียมตัวอ่านภาษาไทย)</div>
+              </div>
+            )}
+
+            {result && !busy && (
+              <>
+                {error && <div className="text-[13px] text-amber-300">{error}</div>}
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="วันที่"><DateInput value={date} onChange={setDate} /></Field>
+                  <Field label="เลขไมล์ (กม.)"><NumInput value={odo} onChange={setOdo} placeholder="0" /></Field>
+                </div>
+                <Field label="ร้าน/ศูนย์"><TextInput value={shop} onChange={setShop} placeholder="ชื่อร้าน" /></Field>
+
+                {result.items.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="text-[12px] text-slate-400 px-1">ตรวจทาน/แก้ไขก่อนบันทึก — ติ๊กเฉพาะรายการที่ต้องการ ({chosenCount}/{result.items.length})</div>
+                    {result.items.map((it, i) => (
+                      <div key={i} className={'rounded-2xl border p-3 space-y-2 ' + (it.include ? 'border-brand/30 bg-brand/[0.06]' : 'border-white/10 bg-white/[0.03] opacity-60')}>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setItem(i, { include: !it.include })} className={'press w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center text-sm font-bold ' + (it.include ? 'bg-brand text-ink-950' : 'bg-white/10 text-slate-500')}>{it.include ? '✓' : ''}</button>
+                          <input value={it.name} onChange={e => setItem(i, { name: e.target.value })} className="flex-1 min-w-0 bg-transparent border-0 border-b border-white/10 text-[15px] text-white px-1 py-1 focus:outline-none focus:border-brand/60" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pl-8">
+                          <select value={it.itemKey} onChange={e => setItem(i, { itemKey: e.target.value })} className="bg-ink-900/80 border border-white/[0.08] rounded-xl px-2.5 py-2 text-[13px] text-white appearance-none">
+                            <option value="" className="bg-ink-850">— อื่นๆ —</option>
+                            {allItems.map(x => <option key={x.key} value={x.key} className="bg-ink-850">{x.icon + ' ' + x.title}</option>)}
+                          </select>
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-500 text-sm">฿</span>
+                            <input inputMode="decimal" value={it.cost} onChange={e => setItem(i, { cost: e.target.value.replace(/[^0-9.]/g, '') })} className="w-full bg-ink-900/80 border border-white/[0.08] rounded-xl px-2.5 py-2 text-[15px] text-white num text-right" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {result.total > 0 && <div className="text-[12px] text-slate-500 px-1 num text-right">ยอดรวมในใบเสร็จ: {baht(result.total)}</div>}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <GhostBtn onClick={() => { setResult(null); setError(''); }} className="flex-1 text-center">สแกนใหม่</GhostBtn>
+                  <div className="flex-1"><PrimaryBtn onClick={save} disabled={!chosenCount}>บันทึก {chosenCount} รายการ</PrimaryBtn></div>
+                </div>
+              </>
+            )}
+          </div>
+        </Sheet>
+      );
+    }
+
     /* ============================== FUEL SCREEN ============================== */
     function FuelScreen({ ctx }) {
       const { data, update } = ctx;
@@ -1295,6 +1532,7 @@
       const [quickItem, setQuickItem] = useState(null);
       const [filter, setFilter] = useState('all'); // all | due | diy | shop
       const [viewPhoto, setViewPhoto] = useState(null);
+      const [scanOpen, setScanOpen] = useState(false);
 
       const usage = useMemo(() => computeUsage(data), [data]);
       const items = useMemo(() => activeSchedule(data.settings).map(it => computeScheduleStatus(it, data, usage)), [data, usage]);
@@ -1388,7 +1626,10 @@
             </div>
           ) : (
             <>
-              <button onClick={() => { setPresetKey(null); setEdit(null); setOpen(true); }} className="press w-full mb-4 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-300 text-ink-950 font-bold">+ บันทึกการบำรุง</button>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <button onClick={() => setScanOpen(true)} className="press py-3.5 rounded-2xl bg-white/[0.07] border border-white/10 text-slate-200 font-bold">📷 สแกนใบเสร็จ</button>
+                <button onClick={() => { setPresetKey(null); setEdit(null); setOpen(true); }} className="press py-3.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-emerald-300 text-ink-950 font-bold">+ บันทึกเอง</button>
+              </div>
               {history.length === 0 ? <EmptyState icon="🔧" title="ยังไม่มีประวัติ" sub="บันทึกการบำรุงครั้งแรกของคุณ" /> : (
                 <div className="relative pl-6">
                   <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-white/10"></div>
@@ -1426,6 +1667,7 @@
           )}
 
           <MaintSheet open={open} onClose={() => { setOpen(false); setEdit(null); setPresetKey(null); }} ctx={ctx} edit={edit} presetKey={presetKey} />
+          <ScanReceiptSheet open={scanOpen} onClose={() => setScanOpen(false)} ctx={ctx} />
           <ConfirmDone item={quickItem} onClose={() => setQuickItem(null)} onConfirm={() => { markDone(quickItem); setQuickItem(null); }} odo={data.vehicle.currentOdo} />
           {viewPhoto && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 anim-fade" onMouseDown={() => setViewPhoto(null)}>
