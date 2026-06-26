@@ -1256,15 +1256,30 @@
 
       // auto-calc total from liters * price
       const onLiters = (v) => { setF(p => { const t = (parseFloat(v) * parseFloat(p.pricePerL)); return { ...p, liters: v, totalCost: (!isNaN(t) ? t.toFixed(2) : p.totalCost) }; }); };
-      const onPrice = (v) => { setF(p => { const t = (parseFloat(p.liters) * parseFloat(v)); return { ...p, pricePerL: v, totalCost: (!isNaN(t) ? t.toFixed(2) : p.totalCost) }; }); };
-      const onTotal = (v) => { setF(p => { const pr = (parseFloat(v) / parseFloat(p.liters)); return { ...p, totalCost: v, pricePerL: (!isNaN(pr) && isFinite(pr) ? pr.toFixed(2) : p.pricePerL) }; }); };
+      const onPrice = (v) => { setF(p => {
+        const price = parseFloat(v), L = parseFloat(p.liters), tot = parseFloat(p.totalCost), next = { ...p, pricePerL: v };
+        if (!isNaN(L) && !isNaN(price)) next.totalCost = (L * price).toFixed(2);
+        else if (!isNaN(tot) && price > 0) next.liters = (tot / price).toFixed(2);
+        return next;
+      }); };
+      const onTotal = (v) => { setF(p => {
+        const tot = parseFloat(v), L = parseFloat(p.liters), price = parseFloat(p.pricePerL), next = { ...p, totalCost: v };
+        if (!isNaN(L) && L > 0) next.pricePerL = (tot / L).toFixed(2);
+        else if (!isNaN(price) && price > 0) next.liters = (tot / price).toFixed(2);
+        return next;
+      }); };
 
       const save = () => {
-        const odo = parseFloat(f.odo), liters = parseFloat(f.liters);
-        if (isNaN(odo) || isNaN(liters)) return;
-        const maxOdo = Math.max(0, ...data.fuelLogs.filter(x => x.id !== (edit && edit.id)).map(x => x.odo), data.vehicle.currentOdo || 0);
+        const odo = parseFloat(f.odo);
+        let liters = parseFloat(f.liters);
+        const price = parseFloat(f.pricePerL), total = parseFloat(f.totalCost);
+        // ถ้าไม่กรอกลิตร แต่มีราคา/ลิตร + ยอดรวม → คำนวณลิตรให้
+        if ((isNaN(liters) || liters <= 0) && price > 0 && total > 0) liters = total / price;
+        if (isNaN(odo)) { alert('กรุณากรอกเลขไมล์ (กม.)'); return; }
+        if (isNaN(liters) || liters <= 0) { alert('กรุณากรอกจำนวนลิตร\n(หรือกรอก "ราคา/ลิตร" + "จำนวนเงินรวม" ให้ระบบคำนวณลิตรให้)'); return; }
+        const maxOdo = Math.max(0, ...data.fuelLogs.filter(x => x.id !== (edit && edit.id)).map(x => x.odo).filter(n => !isNaN(n)), data.vehicle.currentOdo || 0);
         if (odo < maxOdo - 1 && !confirm('เลขไมล์ ' + fmt(odo) + ' น้อยกว่าค่าล่าสุด (' + fmt(maxOdo) + ' กม.) — บันทึกต่อไหม?')) return;
-        const rec = { id: edit ? edit.id : uuid(), date: f.date, odo, liters, pricePerL: parseFloat(f.pricePerL) || 0, totalCost: parseFloat(f.totalCost) || 0, isFull: !!f.isFull, station: f.station || '', note: f.note || '', photo: f.photo || '' };
+        const rec = { id: edit ? edit.id : uuid(), date: f.date, odo, liters, pricePerL: price || (liters > 0 ? total / liters : 0) || 0, totalCost: total || (liters * price) || 0, isFull: !!f.isFull, station: f.station || '', note: f.note || '', photo: f.photo || '' };
         update(d => {
           if (edit) { const i = d.fuelLogs.findIndex(x => x.id === edit.id); if (i >= 0) d.fuelLogs[i] = rec; }
           else d.fuelLogs.push(rec);
@@ -2207,7 +2222,7 @@
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v2.3 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v2.4 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>

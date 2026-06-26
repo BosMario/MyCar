@@ -1,4 +1,4 @@
-const CACHE = 'xmax-1782463965232';
+const CACHE = 'xmax-1782466207618';
 self.addEventListener('install', e => {
   self.skipWaiting();
   // precache the document so every open is instant from cache (never waits on a slow network)
