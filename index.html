@@ -1360,6 +1360,130 @@ async function runReceiptOCR(file, onProgress) {
     await worker.terminate();
   }
 }
+
+/* ===== Gemini Vision (ฟรี · แม่นกว่ามาก · ต้องต่อเน็ต + API key ฟรี) ===== */
+const GEMINI_KEY = 'xmax_gemini_v1';
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+const loadGeminiKey = () => {
+  try {
+    return localStorage.getItem(GEMINI_KEY) || '';
+  } catch (e) {
+    return '';
+  }
+};
+const saveGeminiKey = k => {
+  try {
+    k ? localStorage.setItem(GEMINI_KEY, k) : localStorage.removeItem(GEMINI_KEY);
+  } catch (e) {}
+};
+async function geminiScanReceipt(file, apiKey) {
+  var _j$candidates;
+  const cats = [...SCHEDULE, ...THAI_ITEMS];
+  const known = new Set(cats.map(c => c.key));
+  const catList = cats.map(c => '- ' + c.key + ': ' + c.title).join('\n');
+  const dataUrl = await compressImage(file, 1280, 0.85);
+  const b64 = dataUrl.split(',')[1];
+  const prompt = 'คุณคือผู้ช่วยอ่านใบเสร็จค่าซ่อม/อะไหล่รถจักรยานยนต์ (ภาษาไทย)\n' + 'อ่านรูปใบเสร็จนี้แล้วดึงข้อมูล:\n' + '- รายการอะไหล่/ค่าบริการแต่ละบรรทัด พร้อม amount = ราคารวมของบรรทัดนั้น (คอลัมน์จำนวนเงินขวาสุด ไม่ใช่ราคาต่อหน่วย)\n' + '- category: เลือก key ที่ตรงที่สุดจากรายการด้านล่าง ถ้าไม่ตรงให้ใช้ "other"\n' + '- date: วันที่ในใบเสร็จ รูปแบบ YYYY-MM-DD (ถ้าเป็นปี พ.ศ. ให้ลบ 543 เป็น ค.ศ.)\n' + '- shop: ชื่อร้าน/ศูนย์  ·  total: ยอดรวมทั้งสิ้น\n' + 'ข้ามบรรทัดหัวตาราง ยอดรวม ส่วนลด ภาษีมูลค่าเพิ่ม และข้อมูลลูกค้า\n\nหมวด category ที่เลือกได้:\n' + catList;
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      shop: {
+        type: 'STRING'
+      },
+      date: {
+        type: 'STRING'
+      },
+      total: {
+        type: 'NUMBER'
+      },
+      items: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            name: {
+              type: 'STRING'
+            },
+            category: {
+              type: 'STRING',
+              enum: [...known, 'other']
+            },
+            amount: {
+              type: 'NUMBER'
+            }
+          },
+          required: ['name', 'category', 'amount']
+        }
+      }
+    },
+    required: ['items']
+  };
+  const body = JSON.stringify({
+    contents: [{
+      parts: [{
+        text: prompt
+      }, {
+        inline_data: {
+          mime_type: 'image/jpeg',
+          data: b64
+        }
+      }]
+    }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: schema,
+      temperature: 0
+    }
+  });
+  let res = null,
+    lastErr = '';
+  for (const model of GEMINI_MODELS) {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body
+    });
+    if (r.ok) {
+      res = r;
+      break;
+    }
+    if (r.status === 404) {
+      lastErr = 'รุ่นโมเดลไม่พร้อม';
+      continue;
+    } // ลองรุ่นถัดไป
+    let msg = 'อ่านด้วย Gemini ไม่สำเร็จ (' + r.status + ')';
+    try {
+      const j = await r.json();
+      if (j.error && j.error.message) msg += ' — ' + j.error.message;
+    } catch (e) {}
+    if (r.status === 400 || r.status === 403) msg += ' · ตรวจ API key';
+    if (r.status === 429) msg += ' · โควต้าฟรีเต็มชั่วคราว ลองใหม่ภายหลัง';
+    throw new Error(msg);
+  }
+  if (!res) throw new Error('Gemini ' + (lastErr || 'ไม่พร้อมใช้งาน'));
+  const j = await res.json();
+  const txt = (_j$candidates = j.candidates) == null || (_j$candidates = _j$candidates[0]) == null || (_j$candidates = _j$candidates.content) == null || (_j$candidates = _j$candidates.parts) == null || (_j$candidates = _j$candidates[0]) == null ? void 0 : _j$candidates.text;
+  if (!txt) throw new Error('Gemini ไม่ส่งผลลัพธ์ (อาจติดตัวกรองความปลอดภัย ลองรูปใหม่)');
+  let parsed;
+  try {
+    parsed = JSON.parse(txt);
+  } catch (e) {
+    throw new Error('อ่านผลลัพธ์จาก Gemini ไม่ได้');
+  }
+  const items = (parsed.items || []).map(it => ({
+    name: (it.name || '').trim(),
+    cost: Number(it.amount) || 0,
+    itemKey: known.has(it.category) ? it.category : ''
+  })).filter(it => it.name || it.cost);
+  return {
+    items,
+    total: Number(parsed.total) || 0,
+    date: parsed.date || '',
+    shop: parsed.shop || ''
+  };
+}
 function downloadFile(content, filename, mime) {
   const blob = new Blob([content], {
     type: mime
@@ -2798,7 +2922,11 @@ function ScanReceiptSheet(_ref12) {
   } = ctx;
   const allItems = activeSchedule(data.settings);
   const fileRef = useRef(null);
+  const engineRef = useRef('gemini');
+  const [gkey, setGkey] = useState(loadGeminiKey);
+  const [keyInput, setKeyInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState('gemini');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null); // { items, total }
@@ -2811,22 +2939,38 @@ function ScanReceiptSheet(_ref12) {
       setProgress(0);
       setError('');
       setResult(null);
+      setKeyInput('');
+      setGkey(loadGeminiKey());
       setDate('');
       setOdo(String(data.vehicle.currentOdo || ''));
       setShop('');
     }
   }, [open]);
+  const pick = engine => {
+    engineRef.current = engine;
+    fileRef.current.click();
+  };
+  const saveKey = () => {
+    const k = keyInput.trim();
+    if (!k) return;
+    saveGeminiKey(k);
+    setGkey(k);
+    setKeyInput('');
+    showToast('บันทึก Gemini key แล้ว');
+  };
   const onPick = async e => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    const engine = engineRef.current;
+    setMode(engine);
     setBusy(true);
     setProgress(0);
     setError('');
     setResult(null);
     try {
-      const r = await runReceiptOCR(file, setProgress);
-      if (!r.items.length) setError('อ่านไม่เจอรายการ — ลองถ่ายให้ชัด ตรง และมีแสงพอ แล้วสแกนใหม่');
+      const r = engine === 'gemini' ? await geminiScanReceipt(file, gkey) : await runReceiptOCR(file, setProgress);
+      if (!r.items.length) setError('อ่านไม่เจอรายการ — ลองถ่ายให้ชัด ตรง มีแสงพอ แล้วลองใหม่');
       setResult({
         items: r.items.map(it => ({
           ...it,
@@ -2898,19 +3042,56 @@ function ScanReceiptSheet(_ref12) {
     capture: "environment",
     className: "hidden",
     onChange: onPick
-  }), !result && !busy && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }), !result && !busy && (gkey ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] text-slate-400 leading-relaxed"
-  }, "\u0E16\u0E48\u0E32\u0E22\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u2014 \u0E41\u0E2D\u0E1E\u0E08\u0E30\u0E2D\u0E48\u0E32\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E23\u0E32\u0E04\u0E32 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49 \u0E41\u0E25\u0E49\u0E27\u0E40\u0E14\u0E32\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u0E43\u0E2B\u0E49\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \xB7 \u0E17\u0E33\u0E07\u0E32\u0E19\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07 \u0E1F\u0E23\u0E35 \u0E44\u0E21\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E2D\u0E2D\u0E01\u0E19\u0E2D\u0E01\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07"), /*#__PURE__*/React.createElement(PrimaryBtn, {
-    onClick: () => fileRef.current.click()
-  }, "\uD83D\uDCF7 \u0E16\u0E48\u0E32\u0E22 / \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"), error && /*#__PURE__*/React.createElement("div", {
+  }, "\u0E16\u0E48\u0E32\u0E22/\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u2014 \u0E2D\u0E48\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22 AI (Gemini) \u0E2D\u0E48\u0E32\u0E19\u0E44\u0E17\u0E22\u0E41\u0E21\u0E48\u0E19 \u0E08\u0E31\u0E14\u0E2B\u0E21\u0E27\u0E14\u0E43\u0E2B\u0E49\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: () => pick('gemini')
+  }, "\u2728 \u0E16\u0E48\u0E32\u0E22 / \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B (AI Gemini)"), /*#__PURE__*/React.createElement("div", {
+    className: "text-center"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => pick('tesseract'),
+    className: "text-[12px] text-slate-500 underline"
+  }, "\u0E2B\u0E23\u0E37\u0E2D\u0E43\u0E0A\u0E49\u0E15\u0E31\u0E27\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07 (\u0E2D\u0E2D\u0E1F\u0E44\u0E25\u0E19\u0E4C)")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      saveGeminiKey('');
+      setGkey('');
+    },
+    className: "block mx-auto text-[11px] text-slate-600 underline"
+  }, "\u0E25\u0E1A Gemini key"), error && /*#__PURE__*/React.createElement("div", {
     className: "text-[13px] text-rose-300"
-  }, error)), busy && /*#__PURE__*/React.createElement("div", {
+  }, error)) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "text-[13px] text-slate-300 leading-relaxed"
+  }, "\u0E43\u0E2A\u0E48 ", /*#__PURE__*/React.createElement("b", null, "Gemini API key"), " (\u0E1F\u0E23\u0E35 \xB7 \u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E0A\u0E49\u0E1A\u0E31\u0E15\u0E23) \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E21\u0E48\u0E19"), /*#__PURE__*/React.createElement("ol", {
+    className: "text-[12px] text-slate-400 leading-relaxed list-decimal pl-5 space-y-0.5"
+  }, /*#__PURE__*/React.createElement("li", null, "\u0E40\u0E1B\u0E34\u0E14 ", /*#__PURE__*/React.createElement("a", {
+    href: "https://aistudio.google.com/apikey",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    className: "text-brand font-semibold"
+  }, "aistudio.google.com/apikey \u2197")), /*#__PURE__*/React.createElement("li", null, "\u0E01\u0E14 Create API key \u2192 \u0E04\u0E31\u0E14\u0E25\u0E2D\u0E01\u0E04\u0E48\u0E32 (\u0E02\u0E36\u0E49\u0E19\u0E15\u0E49\u0E19 AIza...)"), /*#__PURE__*/React.createElement("li", null, "\u0E27\u0E32\u0E07\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "off",
+    value: keyInput,
+    onChange: e => setKeyInput(e.target.value),
+    placeholder: "AIza...",
+    className: inputCls + ' text-left'
+  }), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: saveKey,
+    disabled: !keyInput.trim()
+  }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 key"), /*#__PURE__*/React.createElement("div", {
+    className: "text-center"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => pick('tesseract'),
+    className: "text-[12px] text-slate-500 underline"
+  }, "\u0E02\u0E49\u0E32\u0E21\u0E44\u0E1B\u0E01\u0E48\u0E2D\u0E19 \u2014 \u0E43\u0E0A\u0E49\u0E15\u0E31\u0E27\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07 (\u0E1F\u0E23\u0E35 \u0E2D\u0E2D\u0E1F\u0E44\u0E25\u0E19\u0E4C)")), error && /*#__PURE__*/React.createElement("div", {
+    className: "text-[13px] text-rose-300"
+  }, error))), busy && /*#__PURE__*/React.createElement("div", {
     className: "py-8 text-center space-y-3"
   }, /*#__PURE__*/React.createElement("div", {
     className: "text-3xl animate-pulse"
-  }, "\uD83D\uDD0E"), /*#__PURE__*/React.createElement("div", {
+  }, mode === 'gemini' ? '✨' : '🔎'), /*#__PURE__*/React.createElement("div", {
     className: "text-sm text-slate-300 font-semibold"
-  }, "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08...", progress ? ' ' + progress + '%' : ''), /*#__PURE__*/React.createElement("div", {
+  }, mode === 'gemini' ? 'กำลังอ่านด้วย AI...' : 'กำลังอ่านในเครื่อง...', mode === 'tesseract' && progress ? ' ' + progress + '%' : ''), mode === 'tesseract' && /*#__PURE__*/React.createElement("div", {
     className: "h-1.5 rounded-full bg-white/10 overflow-hidden"
   }, /*#__PURE__*/React.createElement("div", {
     className: "h-full bg-brand transition-all",
@@ -2919,7 +3100,7 @@ function ScanReceiptSheet(_ref12) {
     }
   })), /*#__PURE__*/React.createElement("div", {
     className: "text-[11px] text-slate-500"
-  }, "\u0E04\u0E23\u0E31\u0E49\u0E07\u0E41\u0E23\u0E01\u0E2D\u0E32\u0E08\u0E43\u0E0A\u0E49\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E31\u0E01\u0E04\u0E23\u0E39\u0E48 (\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E15\u0E31\u0E27\u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22)")), result && !busy && /*#__PURE__*/React.createElement(React.Fragment, null, error && /*#__PURE__*/React.createElement("div", {
+  }, mode === 'gemini' ? 'ส่งรูปไป Gemini แล้วรอผลสักครู่' : 'ครั้งแรกอาจใช้เวลาสักครู่ (เตรียมตัวอ่านภาษาไทย)')), result && !busy && /*#__PURE__*/React.createElement(React.Fragment, null, error && /*#__PURE__*/React.createElement("div", {
     className: "text-[13px] text-amber-300"
   }, error), /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3"
@@ -4194,11 +4375,13 @@ function InfoScreen(_ref23) {
   }, "\uD83D\uDCA1 \u0E41\u0E19\u0E30\u0E19\u0E33 Export \u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E33 (Safari \u0E2D\u0E32\u0E08\u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E0A\u0E49\u0E19\u0E32\u0E19)"), /*#__PURE__*/React.createElement("button", {
     onClick: clearAll,
     className: "press w-full py-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 font-semibold text-sm mt-1"
-  }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E02\u0E36\u0E49\u0E19 GitHub (Gist)"), /*#__PURE__*/React.createElement(SyncCard, {
+  }, "\uD83D\uDDD1\uFE0F \u0E25\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14")), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E15\u0E31\u0E27\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 (AI)"), /*#__PURE__*/React.createElement(GeminiKeyCard, {
+    showToast: showToast
+  }), /*#__PURE__*/React.createElement(SectionLabel, null, "\u0E0B\u0E34\u0E07\u0E04\u0E4C\u0E02\u0E36\u0E49\u0E19 GitHub (Gist)"), /*#__PURE__*/React.createElement(SyncCard, {
     ctx: ctx
   }), /*#__PURE__*/React.createElement("div", {
     className: "text-center text-[12px] text-slate-600 pb-4"
-  }, "XMAX Logbook \xB7 v2.0 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
+  }, "XMAX Logbook \xB7 v2.2 \xB7 offline-first", /*#__PURE__*/React.createElement("br", null), "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E04\u0E39\u0E48\u0E21\u0E37\u0E2D B5X-F8199-U1 \xB7 \u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19"), /*#__PURE__*/React.createElement(TireSheet, {
     open: tireOpen,
     onClose: () => setTireOpen(false),
     ctx: ctx
@@ -4278,10 +4461,70 @@ function TireSheet(_ref25) {
     onClick: save
   }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01")));
 }
-function SyncCard(_ref26) {
+function GeminiKeyCard(_ref26) {
+  let {
+    showToast
+  } = _ref26;
+  const [key, setKey] = useState(loadGeminiKey);
+  const [input, setInput] = useState('');
+  const save = () => {
+    const k = input.trim();
+    if (!k) return;
+    saveGeminiKey(k);
+    setKey(k);
+    setInput('');
+    showToast('บันทึก Gemini key แล้ว');
+  };
+  const del = () => {
+    if (confirm('ลบ Gemini key?')) {
+      saveGeminiKey('');
+      setKey('');
+    }
+  };
+  return /*#__PURE__*/React.createElement(Card, {
+    className: "p-4 space-y-2.5 mb-5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "text-[12px] text-slate-400 leading-relaxed"
+  }, "\u0E43\u0E0A\u0E49 Google Gemini \u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 (\u0E1F\u0E23\u0E35 \xB7 \u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E0A\u0E49\u0E1A\u0E31\u0E15\u0E23) \u2014 \u0E02\u0E2D key \u0E17\u0E35\u0E48 ", /*#__PURE__*/React.createElement("a", {
+    href: "https://aistudio.google.com/apikey",
+    target: "_blank",
+    rel: "noopener noreferrer",
+    className: "text-brand font-semibold"
+  }, "aistudio.google.com/apikey \u2197")), key ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "text-[13px] text-emerald-300 font-semibold num"
+  }, "\u2713 \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E41\u0E25\u0E49\u0E27 \xB7 key \u2026", key.slice(-4)), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "off",
+    value: input,
+    onChange: e => setInput(e.target.value),
+    placeholder: "\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19 key \u0E43\u0E2B\u0E21\u0E48 (\u0E16\u0E49\u0E32\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23)",
+    className: inputCls + ' text-left'
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement(GhostBtn, {
+    onClick: del,
+    className: "text-center"
+  }, "\u0E25\u0E1A key"), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: save,
+    disabled: !input.trim()
+  }, "\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "off",
+    value: input,
+    onChange: e => setInput(e.target.value),
+    placeholder: "AIza...",
+    className: inputCls + ' text-left'
+  }), /*#__PURE__*/React.createElement(PrimaryBtn, {
+    onClick: save,
+    disabled: !input.trim()
+  }, "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 key")), /*#__PURE__*/React.createElement("div", {
+    className: "text-[11px] text-slate-500 leading-relaxed"
+  }, "\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \xB7 \u0E44\u0E21\u0E48\u0E21\u0E35 key \u0E01\u0E47\u0E22\u0E31\u0E07\u0E43\u0E0A\u0E49\u0E15\u0E31\u0E27\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E19\u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07 (Tesseract) \u0E1F\u0E23\u0E35\u0E44\u0E14\u0E49 \xB7 free tier \u0E02\u0E2D\u0E07 Google \u0E2D\u0E32\u0E08\u0E43\u0E0A\u0E49\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E44\u0E1B\u0E1B\u0E23\u0E31\u0E1A\u0E1B\u0E23\u0E38\u0E07\u0E42\u0E21\u0E40\u0E14\u0E25"));
+}
+function SyncCard(_ref27) {
   let {
     ctx
-  } = _ref26;
+  } = _ref27;
   const {
     data,
     update,
@@ -4439,12 +4682,12 @@ function SyncCard(_ref26) {
     className: "press w-full py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-400 text-[13px] font-semibold"
   }, "\u0E15\u0E31\u0E14\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D"));
 }
-function RefRow(_ref27) {
+function RefRow(_ref28) {
   let {
     k,
     v,
     last
-  } = _ref27;
+  } = _ref28;
   return /*#__PURE__*/React.createElement("div", {
     className: 'flex justify-between gap-4 py-2 ' + (last ? '' : 'border-b border-white/[0.06]')
   }, /*#__PURE__*/React.createElement("span", {
@@ -4453,19 +4696,19 @@ function RefRow(_ref27) {
     className: "text-[13px] text-slate-200 text-right font-medium"
   }, v));
 }
-function SectionLabel(_ref28) {
+function SectionLabel(_ref29) {
   let {
     children
-  } = _ref28;
+  } = _ref29;
   return /*#__PURE__*/React.createElement("div", {
     className: "text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1"
   }, children);
 }
-function Header(_ref29) {
+function Header(_ref30) {
   let {
     title,
     subtitle
-  } = _ref29;
+  } = _ref30;
   return /*#__PURE__*/React.createElement("div", {
     className: "pt-3 pb-4 sticky top-0 z-20"
   }, /*#__PURE__*/React.createElement("div", {
@@ -4474,12 +4717,12 @@ function Header(_ref29) {
     className: "text-3xl font-extrabold tracking-tight"
   }, title));
 }
-function EmptyState(_ref30) {
+function EmptyState(_ref31) {
   let {
     icon,
     title,
     sub
-  } = _ref30;
+  } = _ref31;
   return /*#__PURE__*/React.createElement(Card, {
     className: "p-8 text-center"
   }, /*#__PURE__*/React.createElement("div", {

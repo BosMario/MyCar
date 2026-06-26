@@ -606,6 +606,61 @@
       } finally { await worker.terminate(); }
     }
 
+    /* ===== Gemini Vision (ฟรี · แม่นกว่ามาก · ต้องต่อเน็ต + API key ฟรี) ===== */
+    const GEMINI_KEY = 'xmax_gemini_v1';
+    const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+    const loadGeminiKey = () => { try { return localStorage.getItem(GEMINI_KEY) || ''; } catch (e) { return ''; } };
+    const saveGeminiKey = (k) => { try { k ? localStorage.setItem(GEMINI_KEY, k) : localStorage.removeItem(GEMINI_KEY); } catch (e) {} };
+
+    async function geminiScanReceipt(file, apiKey) {
+      const cats = [...SCHEDULE, ...THAI_ITEMS];
+      const known = new Set(cats.map(c => c.key));
+      const catList = cats.map(c => '- ' + c.key + ': ' + c.title).join('\n');
+      const dataUrl = await compressImage(file, 1280, 0.85);
+      const b64 = dataUrl.split(',')[1];
+      const prompt = 'คุณคือผู้ช่วยอ่านใบเสร็จค่าซ่อม/อะไหล่รถจักรยานยนต์ (ภาษาไทย)\n' +
+        'อ่านรูปใบเสร็จนี้แล้วดึงข้อมูล:\n' +
+        '- รายการอะไหล่/ค่าบริการแต่ละบรรทัด พร้อม amount = ราคารวมของบรรทัดนั้น (คอลัมน์จำนวนเงินขวาสุด ไม่ใช่ราคาต่อหน่วย)\n' +
+        '- category: เลือก key ที่ตรงที่สุดจากรายการด้านล่าง ถ้าไม่ตรงให้ใช้ "other"\n' +
+        '- date: วันที่ในใบเสร็จ รูปแบบ YYYY-MM-DD (ถ้าเป็นปี พ.ศ. ให้ลบ 543 เป็น ค.ศ.)\n' +
+        '- shop: ชื่อร้าน/ศูนย์  ·  total: ยอดรวมทั้งสิ้น\n' +
+        'ข้ามบรรทัดหัวตาราง ยอดรวม ส่วนลด ภาษีมูลค่าเพิ่ม และข้อมูลลูกค้า\n\nหมวด category ที่เลือกได้:\n' + catList;
+      const schema = {
+        type: 'OBJECT',
+        properties: {
+          shop: { type: 'STRING' }, date: { type: 'STRING' }, total: { type: 'NUMBER' },
+          items: { type: 'ARRAY', items: { type: 'OBJECT',
+            properties: { name: { type: 'STRING' }, category: { type: 'STRING', enum: [...known, 'other'] }, amount: { type: 'NUMBER' } },
+            required: ['name', 'category', 'amount'] } },
+        },
+        required: ['items'],
+      };
+      const body = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
+      });
+      let res = null, lastErr = '';
+      for (const model of GEMINI_MODELS) {
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(apiKey), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+        });
+        if (r.ok) { res = r; break; }
+        if (r.status === 404) { lastErr = 'รุ่นโมเดลไม่พร้อม'; continue; } // ลองรุ่นถัดไป
+        let msg = 'อ่านด้วย Gemini ไม่สำเร็จ (' + r.status + ')';
+        try { const j = await r.json(); if (j.error && j.error.message) msg += ' — ' + j.error.message; } catch (e) {}
+        if (r.status === 400 || r.status === 403) msg += ' · ตรวจ API key';
+        if (r.status === 429) msg += ' · โควต้าฟรีเต็มชั่วคราว ลองใหม่ภายหลัง';
+        throw new Error(msg);
+      }
+      if (!res) throw new Error('Gemini ' + (lastErr || 'ไม่พร้อมใช้งาน'));
+      const j = await res.json();
+      const txt = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!txt) throw new Error('Gemini ไม่ส่งผลลัพธ์ (อาจติดตัวกรองความปลอดภัย ลองรูปใหม่)');
+      let parsed; try { parsed = JSON.parse(txt); } catch (e) { throw new Error('อ่านผลลัพธ์จาก Gemini ไม่ได้'); }
+      const items = (parsed.items || []).map(it => ({ name: (it.name || '').trim(), cost: Number(it.amount) || 0, itemKey: known.has(it.category) ? it.category : '' })).filter(it => it.name || it.cost);
+      return { items, total: Number(parsed.total) || 0, date: parsed.date || '', shop: parsed.shop || '' };
+    }
+
     function downloadFile(content, filename, mime) {
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
@@ -1332,7 +1387,11 @@
       const { data, update, showToast } = ctx;
       const allItems = activeSchedule(data.settings);
       const fileRef = useRef(null);
+      const engineRef = useRef('gemini');
+      const [gkey, setGkey] = useState(loadGeminiKey);
+      const [keyInput, setKeyInput] = useState('');
       const [busy, setBusy] = useState(false);
+      const [mode, setMode] = useState('gemini');
       const [progress, setProgress] = useState(0);
       const [error, setError] = useState('');
       const [result, setResult] = useState(null);   // { items, total }
@@ -1341,16 +1400,20 @@
       const [shop, setShop] = useState('');
 
       useEffect(() => {
-        if (open) { setBusy(false); setProgress(0); setError(''); setResult(null); setDate(''); setOdo(String(data.vehicle.currentOdo || '')); setShop(''); }
+        if (open) { setBusy(false); setProgress(0); setError(''); setResult(null); setKeyInput(''); setGkey(loadGeminiKey()); setDate(''); setOdo(String(data.vehicle.currentOdo || '')); setShop(''); }
       }, [open]);
+
+      const pick = (engine) => { engineRef.current = engine; fileRef.current.click(); };
+      const saveKey = () => { const k = keyInput.trim(); if (!k) return; saveGeminiKey(k); setGkey(k); setKeyInput(''); showToast('บันทึก Gemini key แล้ว'); };
 
       const onPick = async (e) => {
         const file = e.target.files[0]; e.target.value = '';
         if (!file) return;
-        setBusy(true); setProgress(0); setError(''); setResult(null);
+        const engine = engineRef.current;
+        setMode(engine); setBusy(true); setProgress(0); setError(''); setResult(null);
         try {
-          const r = await runReceiptOCR(file, setProgress);
-          if (!r.items.length) setError('อ่านไม่เจอรายการ — ลองถ่ายให้ชัด ตรง และมีแสงพอ แล้วสแกนใหม่');
+          const r = engine === 'gemini' ? await geminiScanReceipt(file, gkey) : await runReceiptOCR(file, setProgress);
+          if (!r.items.length) setError('อ่านไม่เจอรายการ — ลองถ่ายให้ชัด ตรง มีแสงพอ แล้วลองใหม่');
           setResult({ items: r.items.map(it => ({ ...it, include: true })), total: r.total });
           if (r.date) setDate(r.date);
           if (r.shop) setShop(r.shop);
@@ -1384,20 +1447,35 @@
           <div className="space-y-4">
             <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />
 
-            {!result && !busy && (
+            {!result && !busy && (gkey ? (
               <>
-                <div className="text-[12px] text-slate-400 leading-relaxed">ถ่ายหรือเลือกรูปใบเสร็จ — แอพจะอ่านรายการ ราคา และวันที่ให้ แล้วเดาหมวดหมู่ให้อัตโนมัติ · ทำงานในเครื่อง ฟรี ไม่ส่งรูปออกนอกเครื่อง</div>
-                <PrimaryBtn onClick={() => fileRef.current.click()}>📷 ถ่าย / เลือกรูปใบเสร็จ</PrimaryBtn>
+                <div className="text-[12px] text-slate-400 leading-relaxed">ถ่าย/เลือกรูปใบเสร็จ — อ่านด้วย AI (Gemini) อ่านไทยแม่น จัดหมวดให้อัตโนมัติ</div>
+                <PrimaryBtn onClick={() => pick('gemini')}>✨ ถ่าย / เลือกรูป (AI Gemini)</PrimaryBtn>
+                <div className="text-center"><button onClick={() => pick('tesseract')} className="text-[12px] text-slate-500 underline">หรือใช้ตัวอ่านในเครื่อง (ออฟไลน์)</button></div>
+                <button onClick={() => { saveGeminiKey(''); setGkey(''); }} className="block mx-auto text-[11px] text-slate-600 underline">ลบ Gemini key</button>
                 {error && <div className="text-[13px] text-rose-300">{error}</div>}
               </>
-            )}
+            ) : (
+              <>
+                <div className="text-[13px] text-slate-300 leading-relaxed">ใส่ <b>Gemini API key</b> (ฟรี · ไม่ต้องใช้บัตร) เพื่ออ่านใบเสร็จไทยให้แม่น</div>
+                <ol className="text-[12px] text-slate-400 leading-relaxed list-decimal pl-5 space-y-0.5">
+                  <li>เปิด <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-brand font-semibold">aistudio.google.com/apikey ↗</a></li>
+                  <li>กด Create API key → คัดลอกค่า (ขึ้นต้น AIza...)</li>
+                  <li>วางด้านล่างแล้วกดบันทึก</li>
+                </ol>
+                <input type="password" autoComplete="off" value={keyInput} onChange={e => setKeyInput(e.target.value)} placeholder="AIza..." className={inputCls + ' text-left'} />
+                <PrimaryBtn onClick={saveKey} disabled={!keyInput.trim()}>บันทึก key</PrimaryBtn>
+                <div className="text-center"><button onClick={() => pick('tesseract')} className="text-[12px] text-slate-500 underline">ข้ามไปก่อน — ใช้ตัวอ่านในเครื่อง (ฟรี ออฟไลน์)</button></div>
+                {error && <div className="text-[13px] text-rose-300">{error}</div>}
+              </>
+            ))}
 
             {busy && (
               <div className="py-8 text-center space-y-3">
-                <div className="text-3xl animate-pulse">🔎</div>
-                <div className="text-sm text-slate-300 font-semibold">กำลังอ่านใบเสร็จ...{progress ? ' ' + progress + '%' : ''}</div>
-                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-brand transition-all" style={{ width: (progress || 5) + '%' }}></div></div>
-                <div className="text-[11px] text-slate-500">ครั้งแรกอาจใช้เวลาสักครู่ (เตรียมตัวอ่านภาษาไทย)</div>
+                <div className="text-3xl animate-pulse">{mode === 'gemini' ? '✨' : '🔎'}</div>
+                <div className="text-sm text-slate-300 font-semibold">{mode === 'gemini' ? 'กำลังอ่านด้วย AI...' : 'กำลังอ่านในเครื่อง...'}{mode === 'tesseract' && progress ? ' ' + progress + '%' : ''}</div>
+                {mode === 'tesseract' && <div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-brand transition-all" style={{ width: (progress || 5) + '%' }}></div></div>}
+                <div className="text-[11px] text-slate-500">{mode === 'gemini' ? 'ส่งรูปไป Gemini แล้วรอผลสักครู่' : 'ครั้งแรกอาจใช้เวลาสักครู่ (เตรียมตัวอ่านภาษาไทย)'}</div>
               </div>
             )}
 
@@ -2123,10 +2201,13 @@
           </Card>
 
           {/* GitHub Gist sync */}
+          <SectionLabel>ตัวอ่านใบเสร็จ (AI)</SectionLabel>
+          <GeminiKeyCard showToast={showToast} />
+
           <SectionLabel>ซิงค์ขึ้น GitHub (Gist)</SectionLabel>
           <SyncCard ctx={ctx} />
 
-          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v2.0 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
+          <div className="text-center text-[12px] text-slate-600 pb-4">XMAX Logbook · v2.2 · offline-first<br />ข้อมูลอ้างอิงจากคู่มือ B5X-F8199-U1 · เก็บในเครื่องนี้เท่านั้น</div>
 
           <TireSheet open={tireOpen} onClose={() => setTireOpen(false)} ctx={ctx} />
         </div>
@@ -2155,6 +2236,34 @@
             <PrimaryBtn onClick={save}>บันทึก</PrimaryBtn>
           </div>
         </Sheet>
+      );
+    }
+
+    function GeminiKeyCard({ showToast }) {
+      const [key, setKey] = useState(loadGeminiKey);
+      const [input, setInput] = useState('');
+      const save = () => { const k = input.trim(); if (!k) return; saveGeminiKey(k); setKey(k); setInput(''); showToast('บันทึก Gemini key แล้ว'); };
+      const del = () => { if (confirm('ลบ Gemini key?')) { saveGeminiKey(''); setKey(''); } };
+      return (
+        <Card className="p-4 space-y-2.5 mb-5">
+          <div className="text-[12px] text-slate-400 leading-relaxed">ใช้ Google Gemini อ่านใบเสร็จไทย (ฟรี · ไม่ต้องใช้บัตร) — ขอ key ที่ <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-brand font-semibold">aistudio.google.com/apikey ↗</a></div>
+          {key ? (
+            <>
+              <div className="text-[13px] text-emerald-300 font-semibold num">✓ เชื่อมแล้ว · key …{key.slice(-4)}</div>
+              <input type="password" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} placeholder="เปลี่ยน key ใหม่ (ถ้าต้องการ)" className={inputCls + ' text-left'} />
+              <div className="grid grid-cols-2 gap-3">
+                <GhostBtn onClick={del} className="text-center">ลบ key</GhostBtn>
+                <PrimaryBtn onClick={save} disabled={!input.trim()}>อัปเดต</PrimaryBtn>
+              </div>
+            </>
+          ) : (
+            <>
+              <input type="password" autoComplete="off" value={input} onChange={e => setInput(e.target.value)} placeholder="AIza..." className={inputCls + ' text-left'} />
+              <PrimaryBtn onClick={save} disabled={!input.trim()}>บันทึก key</PrimaryBtn>
+            </>
+          )}
+          <div className="text-[11px] text-slate-500 leading-relaxed">เก็บในเครื่องนี้เท่านั้น · ไม่มี key ก็ยังใช้ตัวอ่านในเครื่อง (Tesseract) ฟรีได้ · free tier ของ Google อาจใช้ข้อมูลไปปรับปรุงโมเดล</div>
+        </Card>
       );
     }
 
